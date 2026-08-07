@@ -1,0 +1,36 @@
+# モジュール 1: いちばん小さいワークフロー
+#
+# 見どころ:
+#   - トリガー / ジョブ / ステップ という 3 階層
+#   - ジョブは「別々のマシン」で動く（hostname を見れば一目瞭然）
+name: 01 - Hello
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+# トップレベルで最小権限を宣言する。書かないと環境の既定値に依存する。
+permissions:
+  contents: read
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - name: あいさつ
+        run: echo "Hello, GitHub Actions!"
+
+      - name: どのマシンで動いているか
+        run: |
+          echo "hostname: $(hostname)"
+          echo "os      : $(uname -a)"
+
+  # 上のジョブとは別マシンで動く。needs を書いていないので並列に走る。
+  another:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 別のジョブは別のマシン
+        run: |
+          echo "hostname: $(hostname)"
+          echo "この hostname が hello ジョブと違うことを確認する"

@@ -1,0 +1,73 @@
+# モジュール 2: 動的マトリックス（モノレポで効く）
+#
+# 見どころ:
+#   - strategy は「ワークフロー開始時」ではなく「そのジョブが実行可能になった時点」で評価される
+#   - だから前段ジョブの outputs からマトリックスを組み立てられる
+#   - outputs は文字列なので fromJSON が必須
+#
+# services/ 配下のディレクトリを検出して、その分だけビルドジョブを展開します。
+name: 04 - Dynamic Matrix
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "services/**"
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    name: ビルド対象を検出
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.list.outputs.targets }}
+      count: ${{ steps.list.outputs.count }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: services/ 配下を JSON 配列にする
+        id: list
+        run: |
+          targets=$(ls services | jq -Rsc 'split("\n") | map(select(length > 0))')
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+          echo "count=$(echo "$targets" | jq 'length')" >> "$GITHUB_OUTPUT"
+          echo "検出: $targets"
+
+      - name: サマリに書く
+        run: |
+          {
+            echo "### ビルド対象"
+            echo ""
+            echo '${{ steps.list.outputs.targets }}' | jq -r '.[] | "- \(.)"'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: build ${{ matrix.target }}
+    needs: detect
+    # 対象がゼロなら実行しない（空マトリックスはエラーになるため）
+    if: needs.detect.outputs.count != '0'
+    strategy:
+      fail-fast: false
+      matrix:
+        # ここが動的マトリックスの本体
+        target: ${{ fromJSON(needs.detect.outputs.targets) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - name: ビルド
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+        run: npm run build
+
+      - name: 成果物を確認
+        run: cat "dist/${{ matrix.target }}.json"

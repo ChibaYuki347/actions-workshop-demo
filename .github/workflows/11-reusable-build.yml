@@ -1,0 +1,87 @@
+# モジュール 3: Reusable Workflow（本体）
+#
+# 見どころ:
+#   - workflow_call トリガーで「呼ばれる側」になる
+#   - inputs / secrets / outputs で契約を定義する
+#   - 呼び出し側から見ると「ジョブ 1 つ」として現れる
+#
+# 注意: これは on: workflow_call しか持たないので、単体では起動しません。
+name: 11 - Reusable Build
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: 使用する Node.js のバージョン
+        type: string
+        required: false
+        default: "22"
+      run-lint:
+        description: lint を実行するか
+        type: boolean
+        required: false
+        default: true
+      environment-name:
+        description: ログに出す環境名
+        type: string
+        required: false
+        default: dev
+    outputs:
+      artifact-name:
+        description: アップロードしたアーティファクト名
+        value: ${{ jobs.build.outputs.artifact-name }}
+    # secrets を使う場合はここで宣言する。呼び出し側が明示的に渡す必要がある。
+    # secrets:
+    #   NPM_TOKEN:
+    #     required: false
+
+# 呼ばれる側でも permissions は明示する
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-name: ${{ steps.naming.outputs.name }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      # 自リポジトリの composite action を使う
+      - uses: ./.github/actions/setup-project
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: テスト
+        run: npm test
+
+      - name: Lint
+        if: inputs.run-lint
+        run: npm run lint
+
+      - name: ビルド
+        env:
+          APP_VERSION: 1.0.${{ github.run_number }}
+        run: npm run build
+
+      - name: アーティファクト名を決める
+        id: naming
+        run: echo "name=app-${{ inputs.environment-name }}-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.naming.outputs.name }}
+          path: dist/
+          retention-days: 7 # 既定の 90 日は長すぎることが多い
+
+      - name: ジョブサマリ
+        run: |
+          {
+            echo "### ビルド完了"
+            echo ""
+            echo "| 項目 | 値 |"
+            echo "|---|---|"
+            echo "| Node | ${{ inputs.node-version }} |"
+            echo "| 環境 | ${{ inputs.environment-name }} |"
+            echo "| 成果物 | ${{ steps.naming.outputs.name }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,78 @@
+# モジュール 4: Environments と保護ルール
+#
+# 見どころ:
+#   - environment を指定するとゲート（承認待ち・待機時間・ブランチ制限）がかかる
+#   - シークレットを環境ごとに分けられる
+#   - 承認者は最大 6 名（ユーザー / チーム）
+#
+# 事前準備（リポジトリ設定 → Environments）:
+#   1. staging を作る（保護ルールなし）
+#   2. production を作る
+#      - Required reviewers に自分を追加
+#      - Deployment branches を "Selected branches" にして main のみ許可
+name: 24 - Deploy with Environments
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: デプロイするバージョン
+        type: string
+        default: "1.0.0"
+
+permissions:
+  contents: read
+
+# 本番デプロイは並行させない。ただし進行中のデプロイはキャンセルしない。
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: ./.github/actions/setup-project
+      - name: ビルド
+        env:
+          APP_VERSION: ${{ inputs.version }}
+        run: npm run build
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-${{ inputs.version }}
+          path: dist/
+          retention-days: 7
+
+  deploy-staging:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://staging.example.com
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-${{ inputs.version }}
+          path: dist
+      - name: デプロイ（模擬）
+        run: |
+          echo "staging に ${{ inputs.version }} をデプロイ"
+          cat dist/default.json
+
+  deploy-production:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    # ここで承認待ちになる（Required reviewers を設定した場合）
+    environment:
+      name: production
+      url: https://example.com
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-${{ inputs.version }}
+          path: dist
+      - name: デプロイ（模擬）
+        run: |
+          echo "production に ${{ inputs.version }} をデプロイ"
+          echo "承認者: 誰が承認したかはデプロイ履歴と監査ログに残る"

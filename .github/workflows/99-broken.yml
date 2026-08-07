@@ -1,0 +1,47 @@
+# 🔍 演習: このワークフローには問題が 7 つあります
+#
+# 進め方:
+#   1. 5 分で、気づいた問題をできるだけ書き出す
+#   2. ペアで突き合わせる
+#   3. SOLUTIONS.md で答え合わせ
+#
+# ヒント: セキュリティ / パフォーマンス / 保守性 の 3 観点で見る
+#
+# ⚠️ このワークフローは意図的に危険な書き方をしています。
+#    そのまま実行しないでください（on: を workflow_dispatch だけにしてあります）。
+name: 99 - Broken (演習用)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@main
+        with:
+          node-version: 22
+
+      - name: 依存関係のインストール
+        run: npm install
+
+      - name: PR タイトルをログに出す
+        run: echo "building PR ${{ github.event.pull_request.title }}"
+
+      - name: テスト
+        run: npm test
+
+      - name: デプロイ
+        run: |
+          echo "deploying with token ${{ secrets.DEPLOY_TOKEN }}"
+          ./scripts/deploy.sh --token "${{ secrets.DEPLOY_TOKEN }}"
+
+      - uses: some-random-user/cool-action@v1
+        with:
+          path: dist/
+
+      - name: 通知
+        run: curl -X POST https://hooks.example.com/notify -d "done"

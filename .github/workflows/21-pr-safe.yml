@@ -1,0 +1,58 @@
+# モジュール 4: フォーク PR を安全に扱う（その 1・ビルド側）
+#
+# 見どころ:
+#   - pull_request は「フォークのコード」を「権限のないトークン」で動かす。これが正しい既定。
+#   - フォークからの PR では secrets は空になる。これは仕様であり、守られている証拠。
+#   - 書き込みが必要な処理は、このワークフローではやらない。
+#     結果をアーティファクトに置いて、22-pr-comment.yml（workflow_run）に引き継ぐ。
+name: 21 - PR Safe (build)
+
+on:
+  pull_request:
+    branches: [main]
+
+# フォーク PR では、そもそもこれ以上の権限は付かない
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-safe-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # 既定で PR のマージ結果（＝提案されたコード）が checkout される
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - uses: ./.github/actions/setup-project
+
+      - name: テスト
+        id: test
+        run: npm test 2>&1 | tee test-output.txt
+
+      - name: シークレットが空であることを確認（デモ用）
+        run: |
+          # フォークからの PR では空文字になる
+          if [ -z "${{ secrets.DEMO_SECRET }}" ]; then
+            echo "secrets は空です（フォーク PR、または未設定）"
+          else
+            echo "secrets が読めています（同一リポジトリからの PR）"
+          fi
+
+      # 後続の workflow_run に渡すための情報をファイルに落とす
+      - name: 結果をまとめる
+        if: always()
+        run: |
+          mkdir -p pr-result
+          echo "${{ github.event.pull_request.number }}" > pr-result/pr-number.txt
+          echo "${{ job.status }}" > pr-result/status.txt
+          cp test-output.txt pr-result/ 2>/dev/null || true
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: pr-result
+          path: pr-result/
+          retention-days: 1

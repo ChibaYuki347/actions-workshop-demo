@@ -1,0 +1,66 @@
+# モジュール 4: 最小権限
+#
+# 見どころ:
+#   - トップレベルで絞り、必要なジョブでだけ足す
+#   - permissions: {} は「全部 none」
+#   - read-all / write-all を使ってはいけない理由:
+#       権限スコープは今後も増える。write-all にしていると
+#       将来追加されるスコープの権限まで自動的に付いてしまう。
+name: 20 - Permissions
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+# ここが出発点。まず全部 none にして、必要なものだけ足していく。
+permissions: {}
+
+jobs:
+  # 1) 何も要らないジョブ
+  no-permissions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: トークンの権限を確認
+        run: echo "このジョブのトークンは何もできない"
+
+  # 2) コードを読むだけのジョブ
+  read-only:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - run: ls -la
+
+  # 3) PR にコメントするジョブ（書き込みが要る）
+  comment:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write # ここだけ write
+    steps:
+      - name: PR にコメント
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr comment "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "自動チェックが完了しました（run #${{ github.run_number }}）"
+
+  # 4) OIDC を使うジョブ
+  cloud:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC トークンの発行にはこれが必須
+    steps:
+      - name: OIDC を使う想定
+        run: echo "ここでクラウドに OIDC でログインする（23-oidc-azure.yml を参照）"
+# 指定できるスコープ（それぞれ read / write / none）:
+#   actions, artifact-metadata, attestations, checks, code-quality, contents,
+#   deployments, discussions, id-token, issues, models, packages, pages,
+#   pull-requests, repository-projects, security-events, statuses,
+#   vulnerability-alerts

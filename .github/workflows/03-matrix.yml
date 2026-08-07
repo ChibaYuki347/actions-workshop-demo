@@ -1,0 +1,52 @@
+# モジュール 2: マトリックス
+#
+# 見どころ:
+#   - 組み合わせの自動展開
+#   - include で特定の組み合わせにだけ属性を足す
+#   - exclude で組み合わせを間引く
+#   - fail-fast の使い分け
+name: 03 - Matrix
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      # 開発中は false（全部の結果を見たい）、安定したら true（早く落として課金を止める）
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [20, 22]
+        include:
+          # 特定の組み合わせにだけ属性を足す
+          - os: ubuntu-latest
+            node: 22
+            coverage: true
+        exclude:
+          # この組み合わせは動かさない
+          - os: windows-latest
+            node: 20
+
+    name: ${{ matrix.os }} / node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: ${{ matrix.node }}
+
+      - run: npm ci
+      - run: npm test
+
+      - name: カバレッジ（この組み合わせだけ）
+        if: matrix.coverage
+        run: echo "ここでカバレッジを取得してアップロードする"

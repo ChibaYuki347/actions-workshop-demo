@@ -1,0 +1,82 @@
+# モジュール 5: キャッシュ
+#
+# 見どころ:
+#   - key はロックファイルのハッシュを含める（内容が変われば別キャッシュ）
+#   - restore-keys で前方一致フォールバック
+#   - setup-* 系の内蔵キャッシュで済むならそちらを使う（設定ミスが減る）
+#
+# 落とし穴:
+#   - キャッシュのスコープはブランチ単位。あるブランチから読めるのは
+#     そのブランチ自身・その子ブランチ・デフォルトブランチのキャッシュだけ。
+#     → 「main で温めて全 PR で使う」が正しい戦略。feature ブランチ同士では共有されない。
+#   - 既定はリポジトリあたり 10 GB / 7 日間未アクセスで削除。
+#     どちらも Enterprise → Organization → Repository の階層ポリシーで変更できる
+#     （上位から順に設定する必要があり、最も小さい値が適用される）。
+#   - キャッシュに機密を入れない。デフォルトブランチのキャッシュはフォークからも読める。
+#
+# 棚卸し: gh extension install actions/gh-actions-cache
+name: 30 - Cache
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # 推奨: setup-* の内蔵キャッシュを使う
+  builtin-cache:
+    name: 内蔵キャッシュ（推奨）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+          cache: npm # これだけで npm のキャッシュが効く
+      - run: npm ci
+      - run: npm test
+
+  # 自前でキャッシュを制御したい場合
+  manual-cache:
+    name: 明示的なキャッシュ
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+
+      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        id: cache
+        with:
+          path: ~/.npm
+          # ロックファイルが変われば別のキャッシュになる
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          # 完全一致しなくても、前方一致で近いものを再利用する
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
+      - name: ヒットしたか
+        run: echo "cache-hit = ${{ steps.cache.outputs.cache-hit }}"
+
+      - run: npm ci
+      - run: npm test
+
+  # ビルド成果物をジョブ間で引き回す（キャッシュではなくアーティファクト）
+  artifact-handoff:
+    name: アーティファクトで受け渡し
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: ./.github/actions/setup-project
+      - run: npm run build
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: build-output
+          path: dist/
+          retention-days: 3 # 既定の 90 日は長すぎることが多い

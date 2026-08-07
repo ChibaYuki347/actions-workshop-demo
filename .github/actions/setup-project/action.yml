@@ -1,0 +1,48 @@
+# モジュール 3: Composite Action
+#
+# 見どころ:
+#   - 「ステップの塊」を再利用する仕組み（ジョブではない）
+#   - inputs / outputs を持てる
+#   - runs.using: composite が必須で、各 run ステップに shell: の指定が必要
+#
+# 使い方: - uses: ./.github/actions/setup-project
+name: Setup Project
+description: Node.js のセットアップと依存関係のインストールをまとめて行う
+
+inputs:
+  node-version:
+    description: 使用する Node.js のバージョン
+    required: false
+    default: "22"
+  install:
+    description: 依存関係をインストールするか
+    required: false
+    default: "true"
+
+outputs:
+  node-version:
+    description: 実際にセットアップされた Node.js のバージョン
+    value: ${{ steps.resolved.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+      with:
+        node-version: ${{ inputs.node-version }}
+        # setup-* 系に内蔵のキャッシュがあるなら、自前で actions/cache を書くより安全
+        cache: npm
+
+    - name: 依存関係のインストール
+      if: inputs.install == 'true'
+      shell: bash # composite action では shell の指定が必須
+      run: npm ci
+
+    - name: バージョンを記録
+      id: resolved
+      shell: bash
+      run: echo "version=$(node --version)" >> "$GITHUB_OUTPUT"
+
+    - name: セットアップ完了
+      shell: bash
+      run: echo "Node $(node --version) / npm $(npm --version)"

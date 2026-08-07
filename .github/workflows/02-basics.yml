@@ -1,0 +1,112 @@
+# モジュール 2: 基礎文法まとめ
+#
+# 見どころ:
+#   - トリガーの絞り込み（branches / paths）
+#   - workflow_dispatch の inputs
+#   - コンテキストと式
+#   - ジョブ間のデータ受け渡し（outputs）
+#   - ステップの成否に応じた制御（if / continue-on-error）
+name: 02 - Basics
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "test/**"
+      - "package.json"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: デプロイ先
+        type: choice
+        options: [dev, staging, prod]
+        default: dev
+      dry-run:
+        description: 実行せずに内容だけ表示する
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# 同じブランチで新しい push が来たら、古い実行はキャンセルする。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  context:
+    name: コンテキストを覗く
+    runs-on: ubuntu-latest
+    outputs:
+      # 後続ジョブに渡す値は outputs に載せる
+      short-sha: ${{ steps.meta.outputs.short-sha }}
+      is-pr: ${{ steps.meta.outputs.is-pr }}
+    steps:
+      - name: よく使うコンテキスト
+        run: |
+          echo "event      : ${{ github.event_name }}"
+          echo "ref        : ${{ github.ref }}"
+          echo "ref_name   : ${{ github.ref_name }}"
+          echo "sha        : ${{ github.sha }}"
+          echo "actor      : ${{ github.actor }}"
+          echo "run_number : ${{ github.run_number }}"
+          echo "run_attempt: ${{ github.run_attempt }}"
+
+      - name: 出力を作る
+        id: meta
+        run: |
+          echo "short-sha=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "is-pr=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is-pr=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: workflow_dispatch の入力（手動実行のときだけ）
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "environment: ${{ inputs.environment }}"
+          echo "dry-run    : ${{ inputs.dry-run }}"
+
+  use-output:
+    name: 前のジョブの出力を使う
+    needs: context
+    runs-on: ubuntu-latest
+    steps:
+      - name: 受け取った値
+        run: |
+          echo "short-sha: ${{ needs.context.outputs.short-sha }}"
+          echo "is-pr    : ${{ needs.context.outputs.is-pr }}"
+
+  test:
+    name: テスト
+    runs-on: ubuntu-latest
+    steps:
+      # サードパーティ Action は必ずコミット SHA で固定する（モジュール 4 で詳説）
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+
+      - run: npm ci
+      - run: npm test
+
+      # 失敗しても後続を止めたくないステップ
+      - name: 参考情報（失敗しても止めない）
+        continue-on-error: true
+        run: npm run lint
+
+      # 前のステップが失敗したときだけ動く
+      - name: 失敗時のヒント
+        if: failure()
+        run: echo "::warning::テストが失敗しました。ログの Annotations を確認してください"
+
+      # 成功・失敗にかかわらず必ず動く
+      - name: 後片付け
+        if: always()
+        run: echo "cleanup done"

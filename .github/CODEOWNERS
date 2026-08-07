@@ -1,0 +1,5 @@
+# ワークフローの変更は必ずレビューを通す。
+# ブランチ保護（Require review from Code Owners）と組み合わせて初めて効く。
+/.github/workflows/   @your-org/platform-team
+/.github/actions/     @your-org/platform-team
+/.github/CODEOWNERS   @your-org/platform-team

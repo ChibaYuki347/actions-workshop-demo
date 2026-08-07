@@ -1,0 +1,24 @@
+version: 2
+updates:
+  # 使っている Action を自動で最新の SHA に追従させる。
+  # SHA 固定の運用は、これとセットで初めて現実的になる。
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(actions)"
+
+  # composite action 配下も個別に指定が必要
+  - package-ecosystem: github-actions
+    directory: /.github/actions/setup-project
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly

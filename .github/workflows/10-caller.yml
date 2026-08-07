@@ -1,0 +1,43 @@
+# モジュール 3: Reusable Workflow（呼び出し側）
+#
+# 見どころ:
+#   - uses: をジョブのレベルに書く（ステップではない）
+#   - with で inputs を渡す
+#   - secrets: inherit で丸ごと渡す方法もあるが、明示渡しの方が安全
+#   - 呼び出し先の outputs を needs 経由で受け取れる
+name: 10 - Caller
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-dev:
+    # 同一リポジトリなのでパス指定。他リポジトリなら owner/repo/.github/workflows/x.yml@sha
+    uses: ./.github/workflows/11-reusable-build.yml
+    with:
+      node-version: "22"
+      environment-name: dev
+    # secrets: inherit は便利だが「全部渡る」ので、原則は明示渡しにする
+    # secrets:
+    #   NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  build-staging:
+    uses: ./.github/workflows/11-reusable-build.yml
+    with:
+      node-version: "20"
+      run-lint: false
+      environment-name: staging
+
+  report:
+    needs: [build-dev, build-staging]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 呼び出し先の outputs を受け取る
+        run: |
+          echo "dev    : ${{ needs.build-dev.outputs.artifact-name }}"
+          echo "staging: ${{ needs.build-staging.outputs.artifact-name }}"

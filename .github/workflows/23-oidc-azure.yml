@@ -1,0 +1,60 @@
+# モジュール 4: OIDC でクラウドに接続する（シークレットを置かない）
+#
+# 見どころ:
+#   - permissions: id-token: write が必須
+#   - クラウド側に長期シークレットを保存しない
+#   - subject（sub クレーム）で「どのリポジトリの、どのブランチ/環境か」まで縛れる
+#
+# 事前準備（クラウド側）:
+#   Azure の場合、アプリ登録 → フェデレーション資格情報を作成し、
+#   issuer:  https://token.actions.githubusercontent.com
+#   subject: repo:<OWNER>/<REPO>:ref:refs/heads/main
+#            repo:<OWNER>/<REPO>:environment:production   ← 環境で縛るのがより安全
+#   を設定する。AZURE_CLIENT_ID / TENANT_ID / SUBSCRIPTION_ID は
+#   シークレットではなく variables でよい（機密ではないため）。
+name: 23 - OIDC (Azure)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # これが無いと OIDC トークンを要求できない
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # 環境で縛ると subject に environment が入り、より限定的な信頼関係にできる
+    environment: production
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      # --- 実際にクラウドへ接続する場合はコメントを外す ---
+      # - name: Azure にログイン（パスワードもシークレットも使わない）
+      #   uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+      #   with:
+      #     client-id: ${{ vars.AZURE_CLIENT_ID }}
+      #     tenant-id: ${{ vars.AZURE_TENANT_ID }}
+      #     subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      #
+      # - name: 動作確認
+      #   run: az account show
+
+      # --- ここから下は、設定なしでも動く「中身を覗く」デモ ---
+      - name: OIDC トークンの中身を見る（デモ用）
+        run: |
+          # ランナーには OIDC トークンを取りに行くための URL とトークンが渡っている
+          payload=$(curl -sS \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" \
+            | jq -r '.value' | cut -d. -f2 | base64 -d 2>/dev/null || true)
+          echo "$payload" | jq '{iss, aud, sub, repository, ref, environment, job_workflow_ref}'
+          echo ""
+          echo "この sub の値を、クラウド側の信頼関係に設定する"
+
+      - name: なぜ OIDC が良いのか
+        run: |
+          echo "- 長期のクライアントシークレットをリポジトリに置かない"
+          echo "- トークンは実行ごとに発行され、数分で失効する"
+          echo "- sub でリポジトリ / ブランチ / 環境まで限定できる"
+          echo "- 漏れても他リポジトリからは使えない"
