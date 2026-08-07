@@ -1,4 +1,4 @@
-# 演習の解答 — `99-broken.yml` の問題点
+# 演習の解答 — `exercises/99-broken.yml` の問題点
 
 <details>
 <summary>まず自分で 7 つ挙げてから開いてください</summary>

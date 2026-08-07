@@ -27,8 +27,8 @@ npm test
 > フォークからのワークフロー実行を無効化できません。演習用の空リポジトリで行い、
 > self-hosted runner は絶対に接続しないでください。
 
-> ⚠️ **`99-broken.yml` は意図的に危険な書き方をしています。** 演習（間違い探し）専用です。
-> `on:` を `workflow_dispatch` だけにしてありますが、**実行しないでください。**
+> ⚠️ **`exercises/99-broken.yml` は意図的に危険な書き方をしています。** 演習（間違い探し）専用です。
+> `.github/workflows/` の外にあるので実行されることはありませんが、
 > ここに書かれているパターンを本番のワークフローにコピーしないよう注意してください。
 
 ## ファイル構成
@@ -50,15 +50,20 @@ npm test
     25-script-injection.yml    M4  スクリプトインジェクション対策
     30-cache.yml               M5  キャッシュ
     31-concurrency.yml         M5  concurrency
-    99-broken.yml              演習 間違い探し（7 箇所）
   actions/
     setup-project/action.yml   M3  Composite Action
   dependabot.yml               M4  Action の更新自動化
   CODEOWNERS                   M6  ワークフロー変更のレビュー必須化
+exercises/
+  99-broken.yml                演習 間違い探し（7 箇所）
 services/                      M2  動的マトリックスの対象
 src/ test/ scripts/            アプリ本体（依存ゼロ）
 SOLUTIONS.md                   演習の解答
 ```
+
+> `99-broken.yml` を `.github/workflows/` の外に置いているのは意図的です。
+> 実行されないことが構造で保証されるうえ、Dependabot が演習の欠陥（タグ参照）を
+> 「修正」して解答とズレるのも防げます。
 
 ## モジュール別の進め方
 
@@ -135,7 +140,7 @@ gh workflow run "31 - Concurrency"
 
 ### 演習: 間違い探し（M2 の演習枠 5 分 + M4 で回収）
 
-`.github/workflows/99-broken.yml` を読んで、問題点を挙げてください。**7 箇所**あります。
+`exercises/99-broken.yml` を読んで、問題点を挙げてください。**7 箇所**あります。
 
 観点は **セキュリティ（5） / コスト（1） / 再現性（1）** の 3 つ。セキュリティに偏っているのは
 意図的で、「壊れたワークフローの問題はほとんどがセキュリティ」という M4 の伏線になっています。
@@ -154,4 +159,4 @@ gh run list --limit 50 --json databaseId --jq '.[].databaseId' | xargs -n1 gh ru
 
 ## ライセンス
 
-[MIT](./LICENSE)。ワークフローのサンプルは自由にコピーして使ってください（`99-broken.yml` を除く）。
+[MIT](./LICENSE)。ワークフローのサンプルは自由にコピーして使ってください（`exercises/99-broken.yml` を除く）。
