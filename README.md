@@ -4,11 +4,20 @@
 
 ## セットアップ
 
-```bash
-# 1. このリポジトリを自分の Organization / アカウントに push する
-gh repo create <OWNER>/actions-workshop-demo --private --source=. --push
+**読むだけなら**そのままブラウザで見てください。**実際に動かす**なら、自分のアカウント / Organization にコピーします。
 
-# 2. ローカルで動作確認（依存パッケージはゼロなのでオフラインでも動く）
+```bash
+# 方法 A: フォーク（M4 のフォーク PR デモを試すならこちら）
+gh repo fork ChibaYuki347/actions-workshop-demo --clone
+
+# 方法 B: 自分のリポジトリとして作り直す（履歴を持ち込まない）
+gh repo clone ChibaYuki347/actions-workshop-demo
+cd actions-workshop-demo && rm -rf .git && git init && git add -A && git commit -m "init"
+gh repo create <OWNER>/actions-workshop-demo --private --source=. --push
+```
+
+```bash
+# ローカルで動作確認（依存パッケージはゼロなのでオフラインでも動く）
 npm ci
 npm test
 ```
@@ -17,6 +26,10 @@ npm test
 > フォーク PR のデモを本気でやるなら public が必要です。ただし public リポジトリでは
 > フォークからのワークフロー実行を無効化できません。演習用の空リポジトリで行い、
 > self-hosted runner は絶対に接続しないでください。
+
+> ⚠️ **`99-broken.yml` は意図的に危険な書き方をしています。** 演習（間違い探し）専用です。
+> `on:` を `workflow_dispatch` だけにしてありますが、**実行しないでください。**
+> ここに書かれているパターンを本番のワークフローにコピーしないよう注意してください。
 
 ## ファイル構成
 
@@ -123,7 +136,11 @@ gh workflow run "31 - Concurrency"
 ### 演習: 間違い探し（M2 の演習枠 5 分 + M4 で回収）
 
 `.github/workflows/99-broken.yml` を読んで、問題点を挙げてください。**7 箇所**あります。
-答えは [SOLUTIONS.md](./SOLUTIONS.md)。
+
+観点は **セキュリティ（5） / コスト（1） / 再現性（1）** の 3 つ。セキュリティに偏っているのは
+意図的で、「壊れたワークフローの問題はほとんどがセキュリティ」という M4 の伏線になっています。
+
+答えは [SOLUTIONS.md](./SOLUTIONS.md)。**先に自分で 7 つ挙げてから開いてください。**
 
 ## 片付け
 
@@ -134,3 +151,7 @@ gh actions-cache list
 gh actions-cache delete <KEY> --confirm
 gh run list --limit 50 --json databaseId --jq '.[].databaseId' | xargs -n1 gh run delete
 ```
+
+## ライセンス
+
+[MIT](./LICENSE)。ワークフローのサンプルは自由にコピーして使ってください（`99-broken.yml` を除く）。
