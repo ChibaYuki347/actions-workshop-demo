@@ -1,4 +1,109 @@
-# 演習の解答 — `exercises/99-broken.yml` の問題点
+# 演習の解答
+
+演習ファイルは 2 種類あります。
+
+| ファイル | 問題数 | 想定 |
+|---|---|---|
+| `exercises/98-broken-lite.yml` | 3 | はじめての方向け |
+| `exercises/99-broken.yml` | 7 | 一通り書ける方向け |
+
+---
+
+# やさしい版の解答 — `exercises/98-broken-lite.yml`
+
+<details>
+<summary>まず自分で 3 つ挙げてから開いてください</summary>
+
+## L-1. AWS の長期アクセスキーを使っている
+
+```yaml
+# ❌
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+```
+
+`AKIA...` で始まる長期のアクセスキーは、**発行したら失効するまでずっと有効**です。
+漏れたら、気づくまで使われ続けます。ローテーションの運用も必要になります。
+
+```yaml
+# ✅ OIDC を使う。キーそのものを保存しない
+permissions:
+  id-token: write
+  contents: read
+
+steps:
+  - uses: aws-actions/configure-aws-credentials@<コミット SHA> # v5.0.0
+    with:
+      role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+      aws-region: ap-northeast-1
+```
+
+OIDC なら、資格情報は**実行ごとに発行され、数分で失効します**。
+実例は `.github/workflows/23-oidc-aws.yml` を見てください。
+
+---
+
+## L-2. シークレットをログに出力している
+
+```yaml
+# ❌
+run: echo "deploying with key ${{ secrets.AWS_ACCESS_KEY_ID }}"
+```
+
+GitHub はシークレットの値をログ上で `***` にマスクしてくれますが、
+**それを当てにしてはいけません。**
+
+- 分割して出力されるとマスクが外れることがある（`echo ${KEY:0:5}` など）
+- Base64 やエンコードを挟むとマスクされない
+- そもそもログには出す必要がない
+
+```yaml
+# ✅ 値をログに出さない
+run: ./deploy.sh
+env:
+  DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+```
+
+コマンドライン引数ではなく **環境変数で渡す**のが基本です。
+コマンドライン引数はプロセス一覧から見えてしまいます。
+
+---
+
+## L-3. `actions/setup-node@main` とブランチを参照している
+
+```yaml
+# ❌
+- uses: actions/setup-node@main
+```
+
+`main` は**動くブランチ**です。中身がいつ変わるかわかりません。
+昨日通ったビルドが今日落ちる、という事故が起きます。
+
+```yaml
+# ⚠️ タグ参照。タグは付け替えられるので、これでも完全ではない
+- uses: actions/setup-node@v4
+
+# ✅ コミット SHA で固定する
+- uses: actions/setup-node@<コミット SHA> # v4.4.0
+```
+
+SHA で固定すると更新が面倒に見えますが、
+**Dependabot が自動で PR を出してくれる**ので運用は回ります。
+
+---
+
+## おまけ: `npm ci && npm run build` は良い書き方？
+
+はい、`npm ci` は良い選択です。
+`npm install` と違って **`package-lock.json` の通りにしか入れない**ので、
+「ローカルでは動くのに CI で落ちる」を防げます。
+
+</details>
+
+---
+
+# 難しい版の解答 — `exercises/99-broken.yml`
 
 <details>
 <summary>まず自分で 7 つ挙げてから開いてください</summary>

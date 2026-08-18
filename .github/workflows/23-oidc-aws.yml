@@ -1,0 +1,91 @@
+# モジュール 4: OIDC で AWS に接続する（アクセスキーを置かない）
+#
+# 見どころ:
+#   - permissions: id-token: write が必須
+#   - AWS 側に長期のアクセスキー（AKIA...）を保存しない
+#   - subject（sub クレーム）で「どのリポジトリの、どのブランチ/環境か」まで縛れる
+#
+# 事前準備（AWS 側）— 一度きりの作業:
+#
+#   1) IAM > Identity providers > Add provider
+#      Provider type: OpenID Connect
+#      Provider URL : https://token.actions.githubusercontent.com
+#      Audience     : sts.amazonaws.com
+#
+#   2) IAM > Roles > Create role > Web identity
+#      作成した provider と audience を選ぶ
+#      信頼ポリシーの Condition で sub を絞る（下の例を参照）
+#
+#   3) 必要な権限のポリシーをそのロールにアタッチする
+#      （最小権限で。S3 に置くだけなら s3:PutObject だけ、など）
+#
+#   4) 出来上がったロール ARN を GitHub の Variables に入れる
+#      Settings > Secrets and variables > Actions > Variables
+#      名前: AWS_ROLE_ARN   値: arn:aws:iam::123456789012:role/github-actions-deploy
+#      ※ ロール ARN は機密ではないので secrets ではなく variables でよい
+#
+# 信頼ポリシー（AWS 側）の Condition 例:
+#
+#   "Condition": {
+#     "StringEquals": {
+#       "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+#     },
+#     "StringLike": {
+#       "token.actions.githubusercontent.com:sub":
+#         "repo:<OWNER>/<REPO>:environment:production"
+#     }
+#   }
+#
+#   ❌ "sub": "repo:<OWNER>/*"          ← 組織の全リポジトリから引ける。危険
+#   ⚠️ "sub": "repo:<OWNER>/<REPO>:*"   ← そのリポジトリの全ブランチから引ける
+#   ✅ "sub": "repo:<OWNER>/<REPO>:environment:production"  ← 環境で縛るのが最も安全
+#
+name: 23 - OIDC (AWS)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # これが無いと OIDC トークンを要求できない
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # 環境で縛ると sub に environment が入り、より限定的な信頼関係にできる
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # --- 実際に AWS へ接続する場合はコメントを外す ---
+      # - name: AWS の資格情報を取得（アクセスキーを使わない）
+      #   uses: aws-actions/configure-aws-credentials@f503a1870408dcf2c35d5c2b8a68e69211042c7d # v5.0.0
+      #   with:
+      #     role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+      #     aws-region: ap-northeast-1
+      #
+      # - name: 誰として繋がっているか確認
+      #   run: aws sts get-caller-identity
+      #
+      # - name: S3 に成果物を置く
+      #   run: aws s3 sync ./dist s3://my-bucket/ --delete
+
+      # --- ここから下は、AWS の設定なしでも動く「中身を覗く」デモ ---
+      - name: OIDC トークンの中身を見る（デモ用）
+        run: |
+          # ランナーには OIDC トークンを取りに行くための URL とトークンが渡っている
+          payload=$(curl -sS \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" \
+            | jq -r '.value' | cut -d. -f2 | base64 -d 2>/dev/null || true)
+          echo "$payload" | jq '{iss, aud, sub, repository, ref, environment, job_workflow_ref}'
+          echo ""
+          echo "この sub の値を、AWS の信頼ポリシーの Condition に設定する"
+
+      - name: なぜ OIDC が良いのか
+        run: |
+          echo "- 長期のアクセスキー（AKIA...）をリポジトリに置かない"
+          echo "- ローテーションの運用が不要になる"
+          echo "- トークンは実行ごとに発行され、数分で失効する"
+          echo "- sub でリポジトリ / ブランチ / 環境まで限定できる"
+          echo "- 漏れても他リポジトリからは使えない"
