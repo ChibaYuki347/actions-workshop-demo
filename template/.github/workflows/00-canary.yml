@@ -1,0 +1,19 @@
+name: 00 環境確認
+
+# このワークフローは、手動で実行したときだけ動きます。
+# 演習の邪魔をしないよう、push では動かないようにしてあります。
+on:
+  workflow_dispatch:
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリを取得できるか
+        uses: actions/checkout@v5
+
+      - name: 実行環境が使えるか
+        run: |
+          echo "OK: GitHub-hosted runner is working"
+          echo "runner os = $RUNNER_OS"
+          cat README.md

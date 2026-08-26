@@ -1,0 +1,18 @@
+# Day 1 終了時点の完成形
+#
+# 【Day 2 から参加される方・Day 1 で詰まった方へ】
+# この中身を .github/workflows/ci.yml に貼り付ければ、
+# Day 1 が終わった状態から再開できます。
+
+name: CI
+
+on:
+  push:
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: cat README.md
+      - run: echo "done"

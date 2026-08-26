@@ -1,0 +1,25 @@
+# ハンズオン③ で使うコード
+# 手順書 第 3 章「手順 3-1」で、この中身に置き換えます。
+#
+# Day 1 との違いは 3 つです。
+#   1. pull_request: を足した      → PR が作られたときにも動く（今回の主役）
+#   2. push に branches を足した   → main への push のときだけ動く
+#   3. テストの代わりになる判定を足した
+
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: echo "はじめての GitHub Actions"
+      - run: ls -la
+      - name: テストの代わり
+        run: test -f README.md && echo "OK"

@@ -1,0 +1,15 @@
+# ハンズオン① で使うコード
+# 手順書 第 1 章「手順 1-2」で、この中身を .github/workflows/ci.yml に貼り付けます。
+
+name: CI
+
+on:
+  push:
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: echo "はじめての GitHub Actions"
+      - run: ls -la
