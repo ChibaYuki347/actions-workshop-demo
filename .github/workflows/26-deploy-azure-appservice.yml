@@ -1,0 +1,110 @@
+# モジュール 4: OIDC で Azure App Service にデプロイする（デモ用・実際に動きます）
+#
+# このワークフローの見どころ:
+#   - GitHub 側に Azure の鍵もパスワードも 1 つも置いていない
+#   - 使っているのは Variables だけ（すべて機密ではない値）
+#   - environment: production で承認ゲートを通してからデプロイする
+#   - 信頼関係が environment まで縛られているので、他の経路からは Azure に入れない
+#
+# 事前準備:
+#   iac/azure/setup.sh を実行してください。README.md に手順があります。
+#
+# 必要な Variables（Settings > Secrets and variables > Actions > Variables）:
+#   AZURE_CLIENT_ID        アプリ登録の ID
+#   AZURE_TENANT_ID        テナント ID
+#   AZURE_SUBSCRIPTION_ID  サブスクリプション ID
+#   AZURE_WEBAPP_NAME      Web App 名
+#
+#   ※ どれも機密ではないので secrets ではなく variables に入れます
+
+name: 26 - Deploy to Azure App Service
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # これが無いと OIDC トークンを要求できない
+
+concurrency:
+  # 同じ本番に同時に 2 つデプロイしないようにする
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  # ── 1. まずテストする。ここが赤ならデプロイには進まない
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+
+      - name: テスト
+        run: npm test
+
+  # ── 2. テストが通ったときだけデプロイする
+  deploy:
+    needs: test # ← これがないと、テストが赤でもデプロイされてしまう
+    runs-on: ubuntu-latest
+
+    # 承認ゲート。Settings > Environments で承認者を設定できる。
+    # Azure 側の信頼関係もこの environment 名で縛ってある。
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.webapp-url }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: どのコミットを出すのか記録する
+        run: |
+          echo "APP_COMMIT=${GITHUB_SHA}" >> "$GITHUB_ENV"
+          echo "APP_BUILT_AT=$(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> "$GITHUB_ENV"
+
+      # ★ここが今日の目玉★
+      #   パスワードもクライアントシークレットも渡していない。
+      #   GitHub が発行した数分だけ有効な身元証明書だけで Azure に入る。
+      - name: Azure にログイン（鍵を使わない）
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: 誰として繋がっているか確認
+        run: az account show --output table
+
+      - name: 動いているコミットを埋め込む
+        run: |
+          az webapp config appsettings set \
+            --name "${{ vars.AZURE_WEBAPP_NAME }}" \
+            --resource-group "rg-${{ vars.AZURE_WEBAPP_NAME }}" \
+            --settings APP_COMMIT="$APP_COMMIT" APP_BUILT_AT="$APP_BUILT_AT" \
+            --output none
+
+      - name: デプロイ
+        id: deploy
+        uses: azure/webapps-deploy@de617f46172a906d0617bb0e50d81e9e3aec24c8 # v3.0.1
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          package: .
+
+      - name: 本当に新しいものが動いているか確認する
+        run: |
+          url="${{ steps.deploy.outputs.webapp-url }}"
+          echo "確認先: ${url}/healthz"
+          for i in $(seq 1 10); do
+            body=$(curl -sS --max-time 10 "${url}/healthz" || true)
+            echo "$body"
+            if echo "$body" | grep -q "${GITHUB_SHA}"; then
+              echo "::notice::デプロイを確認しました → ${url}"
+              exit 0
+            fi
+            echo "まだ切り替わっていません。10 秒待ちます (${i}/10)"
+            sleep 10
+          done
+          echo "::error::デプロイしたコミットが確認できませんでした"
+          exit 1

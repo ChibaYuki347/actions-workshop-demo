@@ -59,7 +59,7 @@ jobs:
 
       # --- 実際に AWS へ接続する場合はコメントを外す ---
       # - name: AWS の資格情報を取得（アクセスキーを使わない）
-      #   uses: aws-actions/configure-aws-credentials@f503a1870408dcf2c35d5c2b8a68e69211042c7d # v5.0.0
+      #   uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
       #   with:
       #     role-to-assume: ${{ vars.AWS_ROLE_ARN }}
       #     aws-region: ap-northeast-1

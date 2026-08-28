@@ -1,0 +1,91 @@
+# モジュール 4: OIDC で AWS S3 にデプロイする（持ち帰り用のひな形）
+#
+# 当日のデモは Azure（26-deploy-azure-appservice.yml）で行いますが、
+# AWS でもやっていることはまったく同じです。
+#
+# Azure との違いは 2 行だけです:
+#   - azure/login              →  aws-actions/configure-aws-credentials
+#   - azure/webapps-deploy     →  aws s3 sync
+#
+# それ以外（permissions / environment / needs / 承認ゲート）は
+# 1 文字も変わりません。
+#
+# 事前準備:
+#   iac/aws/ の CloudFormation か Terraform を実行してください。
+#   README.md に手順があります。
+#
+# 必要な Variables（Settings > Secrets and variables > Actions > Variables）:
+#   AWS_ROLE_ARN    引き受ける IAM ロールの ARN
+#   AWS_S3_BUCKET   デプロイ先のバケット名
+#   AWS_REGION      リージョン（例 ap-northeast-1）
+#
+#   ※ どれも機密ではないので secrets ではなく variables に入れます
+#   ※ AKIA... で始まるアクセスキーは 1 つも登場しません
+
+name: 27 - Deploy to AWS S3 (take-home)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # これが無いと OIDC トークンを要求できない
+
+concurrency:
+  group: deploy-production-aws
+  cancel-in-progress: false
+
+jobs:
+  # ── 1. まずテストする
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+
+      - name: テスト
+        run: npm test
+
+  # ── 2. テストが通ったときだけデプロイする
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+
+    # AWS 側の信頼ポリシーもこの environment 名で縛ってある
+    environment:
+      name: production
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+
+      - name: ビルド
+        run: npm run build
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+
+      # ★Azure 版と対応する唯一の違いがここ★
+      #   アクセスキーを渡していない。
+      #   GitHub が発行した数分だけ有効な身元証明書でロールを引き受ける。
+      - name: AWS の資格情報を取得（アクセスキーを使わない）
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: 誰として繋がっているか確認
+        run: aws sts get-caller-identity
+
+      - name: S3 に成果物を置く
+        run: |
+          aws s3 sync ./dist "s3://${{ vars.AWS_S3_BUCKET }}/" --delete
+          echo "::notice::s3://${{ vars.AWS_S3_BUCKET }}/ にデプロイしました"
+
+      - name: 置けたか確認する
+        run: aws s3 ls "s3://${{ vars.AWS_S3_BUCKET }}/"

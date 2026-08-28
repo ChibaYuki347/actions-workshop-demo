@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  GitHub Actions から OIDC で S3 静的サイトへデプロイするための最小構成。
+  長期のアクセスキー（AKIA...）を一切作りません。
+
+Parameters:
+  GitHubOwner:
+    Type: String
+    Description: GitHub の組織名またはユーザー名（例 my-org）
+
+  GitHubRepo:
+    Type: String
+    Description: リポジトリ名（例 my-app）
+
+  GitHubEnvironment:
+    Type: String
+    Default: production
+    Description: >
+      許可する GitHub Environment 名。
+      ここで縛ると、その環境を経由した実行からしか AWS に入れません。
+
+  BucketName:
+    Type: String
+    Description: 作成する S3 バケット名（世界で一意である必要があります）
+
+  CreateOidcProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: >
+      OIDC プロバイダを作るかどうか。
+      1 つの AWS アカウントに 1 つしか作れないため、
+      すでにある場合は false にしてください。
+
+Conditions:
+  ShouldCreateOidcProvider: !Equals [!Ref CreateOidcProvider, "true"]
+
+Resources:
+  # ── 1. GitHub を信頼先として登録する（アカウントに 1 つだけ）
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: ShouldCreateOidcProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      Tags:
+        - Key: purpose
+          Value: github-actions-workshop
+
+  # ── 2. 成果物を置く場所
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: purpose
+          Value: github-actions-workshop
+
+  # ── 3. GitHub Actions が引き受けるロール
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "github-actions-deploy-${GitHubRepo}"
+      Description: !Sub "Deploy role for ${GitHubOwner}/${GitHubRepo}"
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - ShouldCreateOidcProvider
+                - !Ref GitHubOidcProvider
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                # 受け取り手が自分（AWS STS）であることを確認する
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                # ★ここが最も重要★
+                #   どのリポジトリの、どの環境からの実行かまで完全一致で縛る。
+                #   ワイルドカードにすると他リポジトリからも引けてしまいます。
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepo}:environment:${GitHubEnvironment}"
+      Policies:
+        - PolicyName: deploy-to-site-bucket
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # 必要な操作だけ。しかもこのバケットに対してだけ。
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub "${SiteBucket.Arn}/*"
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt SiteBucket.Arn
+      Tags:
+        - Key: purpose
+          Value: github-actions-workshop
+
+Outputs:
+  RoleArn:
+    Description: >
+      GitHub の Variables に AWS_ROLE_ARN として設定してください。
+      機密情報ではないので secrets にする必要はありません。
+    Value: !GetAtt DeployRole.Arn
+
+  BucketName:
+    Description: GitHub の Variables に AWS_S3_BUCKET として設定してください
+    Value: !Ref SiteBucket
+
+  SubjectCondition:
+    Description: 信頼ポリシーで許可している条件（この値と完全一致した実行だけが通ります）
+    Value: !Sub "repo:${GitHubOwner}/${GitHubRepo}:environment:${GitHubEnvironment}"

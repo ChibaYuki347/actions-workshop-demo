@@ -52,6 +52,8 @@ npm test
     23-oidc-aws.yml            M4  OIDC でクラウド接続（AWS）
     24-deploy-environment.yml  M4  Environments と承認ゲート
     25-script-injection.yml    M4  スクリプトインジェクション対策
+    26-deploy-azure-appservice.yml  D2  OIDC で Azure App Service へ実デプロイ
+    27-deploy-aws-s3.yml       D2  OIDC で AWS S3 へ実デプロイ
     30-cache.yml               M5  キャッシュ
     31-concurrency.yml         M5  concurrency
   actions/
@@ -61,6 +63,9 @@ npm test
 exercises/
   98-broken-lite.yml           演習 間違い探し・やさしい版（3 箇所）
   99-broken.yml                演習 間違い探し（7 箇所）
+iac/
+  azure/                       D2  デモ環境の構築（Bicep + setup.sh）
+  aws/                         D2  持ち帰り用（CloudFormation / Terraform）
 services/                      M2  動的マトリックスの対象
 src/ test/ scripts/            アプリ本体（依存ゼロ）
 SOLUTIONS.md                   演習の解答
@@ -69,6 +74,56 @@ SOLUTIONS.md                   演習の解答
 > `exercises/` を `.github/workflows/` の外に置いているのは意図的です。
 > 実行されないことが構造で保証されるうえ、Dependabot が演習の欠陥（タグ参照）を
 > 「修正」して解答とズレるのも防げます。
+
+## クラウドへのデプロイを試す
+
+**3 段構えになっています。上から順に、必要なものが増えます。**
+
+| 段 | やること | 必要なもの | ワークフロー |
+|---|---|---|---|
+| **①** | OIDC トークンの中身を見る | **何も要らない** | `23-oidc-aws.yml` / `23-oidc-azure.yml` |
+| **②** | Azure App Service へデプロイ | Azure サブスクリプション | `26-deploy-azure-appservice.yml` |
+| **③** | AWS S3 へデプロイ | AWS アカウント | `27-deploy-aws-s3.yml` |
+
+### ① まずここから（クラウド不要）
+
+```bash
+gh workflow run "23 - OIDC (AWS)"
+```
+
+クラウドのアカウントが無くても動きます。GitHub が発行する**身元証明書（JWT）の中身をログに出力する**だけなので、
+「誰が」「どのリポジトリの」「どのブランチから」実行したかがトークンに書き込まれていることを目で確認できます。
+
+**OIDC の理解には、これがいちばん効きます。**
+
+### ②③ 実際にデプロイする
+
+環境構築のスクリプトを `iac/` に用意してあります。**`iac/README.md` から読んでください。**
+
+```bash
+cd iac/azure && ./setup.sh      # Azure（リソース作成からフェデレーション設定まで一括）
+cd iac/aws   && cat README.md   # AWS（CloudFormation / Terraform を選択）
+```
+
+> ⚠️ **AWS 版は必ず検証用アカウントで試してください。** IAM の変更を伴います。
+
+どちらも**長期の認証情報を GitHub に保存しません。**デプロイ後に
+`Settings > Secrets and variables > Actions` を開くと、**Secrets タブが空**であることが確認できます。
+
+### Azure と AWS の違い
+
+ワークフローで実際に変わるのは**ログインとデプロイの 2 行だけ**です。
+
+```diff
+- - uses: aws-actions/configure-aws-credentials@v6
++ - uses: azure/login@v2
+
+- - run: aws s3 sync ./dist s3://my-bucket --delete
++ - uses: azure/webapps-deploy@v3
+```
+
+`permissions: id-token: write`、`environment: production`、承認ゲート、
+信頼する文字列の形（`repo:<owner>/<repo>:environment:production`）は**完全に同じ**です。
 
 ## モジュール別の進め方
 
@@ -169,6 +224,13 @@ CI/CD をこれから始める方向け。観点は **セキュリティ（2） 
 gh actions-cache list
 gh actions-cache delete <KEY> --confirm
 gh run list --limit 50 --json databaseId --jq '.[].databaseId' | xargs -n1 gh run delete
+```
+
+クラウド側のリソースも忘れずに削除してください。
+
+```bash
+cd iac/azure && ./teardown.sh   # リソースグループとアプリ登録を削除
+# AWS は iac/aws/README.md の手順を参照
 ```
 
 ## ライセンス
