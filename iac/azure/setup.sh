@@ -18,6 +18,7 @@
 # 必要なもの:
 #   - Azure CLI (az) にログイン済みであること
 #   - GitHub CLI (gh) にログイン済みであること（6 を自動化する場合）
+#   ※ jq などの追加ツールは不要です
 #
 # 後片付け:
 #   ./teardown.sh <appName> を実行してください
@@ -42,14 +43,18 @@ echo "==> 1/6 リソースグループ ${RG} を作ります"
 az group create -n "$RG" -l "$LOCATION" -o none
 
 echo "==> 2/6 App Service を作ります（Bicep）"
-DEPLOY_OUT=$(az deployment group create \
+DEPLOY_NAME="gha-setup"
+az deployment group create \
   -g "$RG" \
+  -n "$DEPLOY_NAME" \
   -f "$(dirname "$0")/main.bicep" \
   -p appName="$APP_NAME" \
-  --query properties.outputs -o json)
+  -o none
 
-SITE_URL=$(echo "$DEPLOY_OUT" | jq -r '.siteUrl.value')
-SITE_ID=$(echo "$DEPLOY_OUT" | jq -r '.siteResourceId.value')
+SITE_URL=$(az deployment group show -g "$RG" -n "$DEPLOY_NAME" \
+  --query properties.outputs.siteUrl.value -o tsv)
+SITE_ID=$(az deployment group show -g "$RG" -n "$DEPLOY_NAME" \
+  --query properties.outputs.siteResourceId.value -o tsv)
 echo "    公開 URL: ${SITE_URL}"
 
 echo "==> 3/6 Entra ID にアプリを登録します"
