@@ -599,7 +599,18 @@ jobs:
 
 ---
 
-## D2-3. AWS へデプロイする
+## D2-3. クラウドへデプロイする
+
+このセクションは **3 段構え**で進みます。
+
+| | 何をするか | 必要なもの | いつ |
+|---|---|---|---|
+| **① 見る** | GitHub が発行する「身元証明書」の中身をログに表示する | **何も要りません** | 当日・全員 |
+| **② 見る** | 講師が Azure App Service に実際にデプロイする | 講師の環境 | 当日・デモ |
+| **③ 試す** | 同じことを御社の AWS で動かす | AWS アカウント | 持ち帰り |
+
+**①は今日その場で、皆さんのリポジトリでも実行できます。**
+クラウドのアカウントが 1 つも無くても、OIDC の本質は確認できます。
 
 ### 長期アクセスキーの問題
 
@@ -624,14 +635,79 @@ env:
 ① GitHub Actions が実行される
 ② GitHub が「このリポジトリの、このブランチの、この環境で動いています」
    という短命の証明書（ID トークン）を発行する
-③ Actions がそれを AWS の STS に提示する
-④ AWS が「そのリポジトリなら OK」と判断し、一時的な資格情報を返す
-⑤ その資格情報で S3 / ECS / Lambda を操作する
+③ Actions がそれをクラウド側に提示する
+④ クラウドが「そのリポジトリなら OK」と判断し、一時的な資格情報を返す
+⑤ その資格情報で S3 / ECS / Lambda / App Service などを操作する
 ```
 
-**GitHub 側にも AWS 側にも、長期の秘密は置きません。**
+**GitHub 側にもクラウド側にも、長期の秘密は置きません。**
 
-### AWS 側の設定（一度きり）
+### ① 身元証明書の中身を見る（クラウド不要）
+
+デモリポジトリの `23-oidc-aws.yml` を `workflow_dispatch` で実行すると、
+GitHub が発行したトークンの中身がログに表示されます。
+
+```yaml
+permissions:
+  id-token: write          # ← これが無いとトークンを要求できない
+
+steps:
+  - name: トークンを取得して中身を見る
+    run: |
+      TOKEN=$(curl -sS \
+        -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+        "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" \
+        | jq -r '.value')
+      # JWT の真ん中（ペイロード）を取り出して読む
+      echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | jq .
+```
+
+表示されるのはこういう内容です。
+
+```json
+{
+  "iss": "https://token.actions.githubusercontent.com",
+  "sub": "repo:my-org@123456/my-app@7890123:environment:production",
+  "repository": "my-org/my-app",
+  "workflow": "Deploy",
+  "actor": "yamada-taro",
+  "exp": 1756800000
+}
+```
+
+| 項目 | 意味 |
+|---|---|
+| `iss` | 発行元。GitHub が発行したことを示す |
+| `sub` | **誰なのか。**クラウド側はこの文字列を見て許可を判断する |
+| `repository` / `workflow` / `actor` | どのリポジトリの・どのワークフローから・誰が動かしたか |
+| `exp` | 有効期限。**数分で切れる**ので、ログに出ていてももう使えない |
+
+> 💡 このトークンは GitHub が署名しています。
+> 中身を書き換えても、クラウド側の検証で弾かれます。
+
+> ⚠️ **`sub` の `@` のうしろの数字について**
+> 2026 年 7 月 15 日以降に作られたリポジトリでは、`sub` に GitHub が割り当てた
+> **変更されない ID** が入ります（`my-org@123456` の `123456` の部分）。
+> リポジトリ名を変えてもこの値は変わらないため、名前ベースだった従来より安全です。
+>
+> **ここに表示された値を、次の ③ でそのままコピーして使ってください。**
+> 手で組み立てると桁を間違えて必ず失敗します。
+> 詳しくは 4.8 節を参照してください。
+
+### ② クラウド側の設定（一度きり）
+
+AWS でも Azure でも、やることは同じ 3 つです。
+
+| やること | AWS | Azure |
+|---|---|---|
+| **1. GitHub を信頼先に登録** | IAM の ID プロバイダ | Entra ID のアプリ登録 |
+| **2. 権限の入れ物を作る** | IAM ロール | サービスプリンシパル |
+| **3. 使える相手を絞る** | 信頼ポリシーの `sub` 条件 | フェデレーション資格情報の `subject` |
+| ログインに使う Action | `aws-actions/configure-aws-credentials` | `azure/login` |
+| ワークフロー側の権限 | `id-token: write` | `id-token: write` |
+| **GitHub に置く秘密** | **なし** | **なし** |
+
+#### AWS の場合
 
 **1. ID プロバイダを登録**
 
@@ -653,30 +729,63 @@ IAM > Identity providers > Add provider
   "Action": "sts:AssumeRoleWithWebIdentity",
   "Condition": {
     "StringEquals": {
-      "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
-    },
-    "StringLike": {
+      "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
       "token.actions.githubusercontent.com:sub":
-        "repo:my-org/my-repo:environment:production"
+        "repo:my-org@123456/my-repo@7890123:environment:production"
     }
   }
 }
 ```
 
+> 📌 **`sub` の値は、① のデモで表示されたものをそのままコピーしてください。**
+> `@` のうしろの数字は GitHub が割り当てた ID なので、手では組み立てられません。
+> コマンドで確認することもできます:
+> ```bash
+> gh api repos/OWNER/REPO/actions/oidc/customization/sub --jq .sub_claim_prefix
+> ```
+
 **この `sub` の絞り方が、セキュリティのすべてです。**
 
 | 書き方 | 意味 | 評価 |
 |---|---|---|
-| `repo:my-org/*` | 組織の**全リポジトリ**から引ける | ❌ 危険 |
-| `repo:my-org/my-repo:*` | そのリポジトリの**全ブランチ**から引ける | ⚠️ 甘い |
-| `repo:my-org/my-repo:ref:refs/heads/main` | main ブランチからのみ | ✅ 良い |
-| `repo:my-org/my-repo:environment:production` | **production 環境のジョブからのみ** | ✅✅ 最良 |
+| `StringLike` + `repo:my-org/*` | 組織の**全リポジトリ**から引ける | ❌ 危険 |
+| `StringLike` + `repo:.../my-repo:*` | そのリポジトリの**全ブランチ**から引ける | ⚠️ 甘い |
+| `StringEquals` + `...:ref:refs/heads/main` | main ブランチからのみ | ✅ 良い |
+| `StringEquals` + `...:environment:production` | **production 環境のジョブからのみ** | ✅✅ 最良 |
+
+> ⚠️ **`StringLike` はワイルドカードが使える演算子です。**
+> 完全一致で縛るときは `StringEquals` を使ってください。
+> `StringLike` のまま運用すると、あとから `*` を足されても気づけません。
 
 **3. ロール ARN を GitHub の Variables に入れる**
 
 ロール ARN は機密ではないので `secrets` ではなく `vars` で構いません。
 
-### GitHub 側のワークフロー
+#### Azure の場合
+
+```
+Entra ID > アプリの登録 > 新規登録
+  ↓
+[証明書とシークレット] > [フェデレーション資格情報] > 資格情報の追加
+  シナリオ  : GitHub Actions が Azure リソースをデプロイする
+  Subject   : repo:my-org@123456/my-repo@7890123:environment:production
+              ↑ ① のデモで表示された値をそのまま貼る
+  ↓
+対象リソースに RBAC ロールを割り当てる（サブスクリプション全体にしない）
+```
+
+> 💡 画面のフォームに Organization 名 / リポジトリ名を入力すると、
+> Azure が従来形式の Subject を**自動で組み立ててしまいます**。
+> 新形式のリポジトリではそれでは通りません。
+> **[エンティティの種類] で「その他の発行者」を選び、Subject を直接入力してください。**
+
+**Azure でも GitHub に置くのは秘密ではありません。**
+クライアント ID / テナント ID / サブスクリプション ID は公開されても悪用できない値なので、
+`secrets` ではなく `vars` に入れます。
+
+### ③ GitHub 側のワークフロー
+
+**AWS の場合**
 
 ```yaml
 name: Deploy to AWS
@@ -696,7 +805,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: aws-actions/configure-aws-credentials@v5
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ap-northeast-1
@@ -705,11 +814,57 @@ jobs:
       - run: aws s3 sync ./dist s3://my-bucket/ --delete
 ```
 
+**Azure の場合 — 変わるのは 2 か所だけ**
+
+```yaml
+permissions:
+  contents: read
+  id-token: write          # ← 同じ
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production          # ← 同じ
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: azure/login@v2                        # ← ここが違う
+        with:
+          client-id:       ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - run: az account show                # 誰として繋がったか確認
+      - uses: azure/webapps-deploy@v3       # ← ここが違う
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          package: .
+```
+
+`permissions` / `environment` / `needs` / 承認ゲートは**まったく同じ**です。
+クラウドが変わっても、覚えることは変わりません。
+
 > ⚠️ **`permissions: id-token: write` を忘れると動きません。**
 > これは OIDC でいちばん多いつまずきです。
 
-> ⚠️ `aws-actions/configure-aws-credentials` は**サードパーティ Action**です。
+> ⚠️ `aws-actions/configure-aws-credentials` も `azure/login` も**サードパーティ Action**です。
 > 組織のポリシーで許可されているか、事前に確認してください。
+
+### 持ち帰って試すための材料
+
+デモリポジトリの `iac/` フォルダに、今日お見せしたものと同じ環境を作る手順一式を入れてあります。
+
+| フォルダ | 中身 | 想定 |
+|---|---|---|
+| `iac/README.md` | 3 段構成の説明。**まずここから** | 全員 |
+| `iac/azure/` | Bicep テンプレート ＋ 設定スクリプト | Azure を試す方 |
+| `iac/aws/` | CloudFormation ＋ Terraform | **AWS を試す方** |
+
+`iac/aws/` は、この資料の「AWS の場合」をそのままコード化したものです。
+OIDC プロバイダ・IAM ロール・信頼ポリシー・S3 バケットまで一度に作れます。
+
+> ⚠️ **必ず検証用アカウントで試してください。**
+> IAM の変更は影響範囲が広く、本番アカウントでいきなり実行するものではありません。
 
 ### 切り戻し（ロールバック）
 
@@ -1449,6 +1604,8 @@ updates:
 
 **発想の転換**: クラウドの長期認証情報を GitHub 側に保存せず、**実行のたびに短命トークンを取りに行く**。
 
+> 具体的な設定手順とデモ用の IaC は **D2-3 章**にあります。ここは要点だけをまとめたものです。
+
 ```yaml
 permissions:
   id-token: write             # ← 必須。忘れると失敗する
@@ -1456,25 +1613,109 @@ permissions:
 
 jobs:
   deploy:
+    environment: production   # ← 信頼ポリシーで縛る対象にもなる
     steps:
+      # Azure の場合
       - uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # AWS の場合（上と入れ替えるだけ）
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ap-northeast-1
 ```
+
+> **`secrets` ではなく `vars` を使っている点に注目してください。**
+> クライアント ID もロール ARN も**単体では何もできない識別子**なので、隠す必要がありません。
+> 本人であることの証明は、実行のたびに発行される短命トークンが担います。
 
 **仕組み**: GitHub が発行する ID トークンをクラウド側が検証し、条件に合えば一時的な権限を返します。**GitHub 側に残る秘密がなくなります。**
 
 **クラウド側の信頼ポリシーを絞ってください**:
 
-- どのリポジトリからの要求を受け入れるか
-- どのブランチからか
-- どの Environment からか
+| 縛る対象 | 書き方の例 |
+|---|---|
+| リポジトリ | `repo:my-org/my-repo:` で始まること |
+| ブランチ | `repo:my-org/my-repo:ref:refs/heads/main` |
+| **Environment** | `repo:my-org/my-repo:environment:production` |
 
-> 「組織内のどのリポジトリからでも OK」にしてしまう設定ミスが多いです。**リポジトリとブランチまで指定**してください。ここを緩くすると OIDC にした意味が薄れます。
+> ⚠️ **AWS では `StringLike` ではなく `StringEquals` を使ってください。**
+> `StringLike` はワイルドカードが効くため、`repo:my-org/*` のような書き方だと
+> **組織内のどのリポジトリからでも引けてしまいます。**
 
-**移行の進め方**: まずデプロイ系のワークフロー 1 本から始めるのが現実的です。
+**Environment で縛るのが最も強い**縛り方です。ブランチだけで縛ると、main に対する任意のワークフローから引けてしまいますが、Environment まで含めれば**承認ゲートを通ったジョブだけ**に限定できます。
+
+#### ⚠️ 2026 年 7 月からの変更 — `sub` に ID が入るようになりました
+
+**2026 年 7 月 15 日以降に作成されたリポジトリ**では、`sub` の形式が変わっています。
+
+| | 形式 |
+|---|---|
+| 従来 | `repo:my-org/my-repo:environment:production` |
+| **新** | `repo:my-org@123456/my-repo@7890123:environment:production` |
+
+`@` のうしろの数字は、GitHub がその Organization / リポジトリに割り当てた**変更されない ID** です。リポジトリ名を変えても、Organization 名を変えても、この値は変わりません。
+
+**なぜ変わったのか**: 従来の形式は名前ベースだったため、リポジトリを削除して**同じ名前で作り直す**と、以前の信頼ポリシーがそのまま効いてしまう余地がありました。ID ベースにすることで、この経路を塞いでいます。
+
+**どちらの形式になるかの判定**:
+
+| リポジトリ | 形式 |
+|---|---|
+| 2026 年 7 月 15 日**以降**に作成 | **新形式**（自動） |
+| 2026 年 7 月 15 日以降にリネーム／移管 | **新形式**へ移行 |
+| それ以前から存在し、そのまま | 従来形式（明示的にオプトインするまで） |
+
+> **社内で 2 種類が混在します。** 新しく作るリポジトリは新形式、既存リポジトリは従来形式です。
+> リポジトリごとに確認してください。
+
+**確実な確認方法** — 推測で書かないでください:
+
+```bash
+# 方法 1: API で聞く（最も速い）
+gh api repos/OWNER/REPO/actions/oidc/customization/sub --jq .sub_claim_prefix
+# → repo:my-org@123456/my-repo@7890123
+
+# 方法 2: 実際にトークンを発行して中身を見る
+#   デモリポジトリの 23-oidc-aws.yml を実行すると、
+#   ログの最後に「クラウド側に書くのはこの値です」と表示されます
+```
+
+> ⚠️ API のレスポンスに含まれる `use_immutable_subject` は「**明示的にオプトインしたか**」を表すフラグです。
+> これが `false` でも、新しいリポジトリの `sub_claim_prefix` にはすでに ID が入っています。
+> **このフラグではなく、`sub_claim_prefix` の値そのものを見てください。**
+
+**混在期の実務的な対処** — 両方を許可しておけば、どちらでも通ります。
+
+AWS の場合、`StringEquals` の値は配列にできます（OR 条件になります）:
+
+```json
+"StringEquals": {
+  "token.actions.githubusercontent.com:sub": [
+    "repo:my-org@123456/my-repo@7890123:environment:production",
+    "repo:my-org/my-repo:environment:production"
+  ]
+}
+```
+
+Azure の場合、1 つのアプリ登録に**フェデレーション資格情報を複数**ぶら下げられます（新形式用と従来形式用の 2 つを作る）。
+
+**間違えたときのエラー**:
+
+| クラウド | メッセージ |
+|---|---|
+| Azure | `AADSTS700213: No matching federated identity record found for presented assertion subject '...'` |
+| AWS | `Not authorized to perform sts:AssumeRoleWithWebIdentity` |
+
+どちらも**メッセージの中に実際の `sub` が出ています**。それをそのままコピーして登録すれば直ります。
+
+> この変更は **github.com のみ**です。GitHub Enterprise Server には影響しません。
+
+**移行の進め方**: まずデプロイ系のワークフロー 1 本から始めるのが現実的です。既存の長期キーは、OIDC 経路が安定してから削除してください。
 
 ### 4.9 Environments
 
@@ -1763,7 +2004,7 @@ lint / ユニットテスト  →  ビルド  →  統合テスト  →  デプ�
 |---|---|---|
 | **OIDC** | オーアイディーシー | OpenID Connect。長期のアクセスキーを保存せずに、その場限りの資格情報でクラウドに接続する仕組み |
 | **ID トークン** | — | OIDC で GitHub が発行する短命の証明書 |
-| **`sub` クレーム** | サブ | ID トークンに入る「誰か」を表す文字列。`repo:org/repo:environment:production` の形 |
+| **`sub` クレーム** | サブ | ID トークンに入る「誰か」を表す文字列。`repo:org@123456/repo@7890123:environment:production` の形 |
 | **STS** | エスティーエス | AWS Security Token Service。一時的な資格情報を発行する AWS のサービス |
 | **信頼ポリシー** | trust policy | AWS のロールに対して「誰が引き受けてよいか」を書いたルール |
 | **最小権限** | least privilege | 必要な権限だけを与えるという原則 |
