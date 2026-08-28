@@ -63,17 +63,48 @@ az ad sp create --id "$APP_ID" -o none 2>/dev/null || true
 echo "    client-id: ${APP_ID}"
 
 echo "==> 4/6 フェデレーション資格情報を作ります"
-echo "    許可する条件: repo:${GH_REPO}:environment:${ENVIRONMENT}"
-az ad app federated-credential create --id "$APP_ID" --parameters "$(cat <<JSON
+
+# GitHub は 2026-07-15 以降に作られたリポジトリで、sub クレームに
+# 「変更されない ID」を埋め込む形式を使うようになりました。
+#
+#   従来: repo:owner/repo:environment:production
+#   新式: repo:owner@54379951/repo@1327183258:environment:production
+#
+# どちらが使われるかはリポジトリの作成時期などで変わるため、
+# GitHub 本人に「あなたの sub は何ですか」と聞いて、その値をそのまま使います。
+SUB_PREFIX=""
+if command -v gh >/dev/null 2>&1; then
+  SUB_PREFIX=$(gh api "repos/${GH_REPO}/actions/oidc/customization/sub" \
+    --jq '.sub_claim_prefix' 2>/dev/null || true)
+fi
+if [[ -z "$SUB_PREFIX" || "$SUB_PREFIX" == "null" ]]; then
+  SUB_PREFIX="repo:${GH_REPO}"
+  echo "    ※ GitHub に問い合わせできなかったので従来形式を使います"
+fi
+
+add_federated_credential() {
+  local name="$1" subject="$2"
+  echo "    許可する条件: ${subject}"
+  az ad app federated-credential create --id "$APP_ID" --parameters "$(cat <<JSON
 {
-  "name": "gha-${ENVIRONMENT}",
+  "name": "${name}",
   "issuer": "https://token.actions.githubusercontent.com",
-  "subject": "repo:${GH_REPO}:environment:${ENVIRONMENT}",
+  "subject": "${subject}",
   "description": "GitHub Actions from ${GH_REPO} (${ENVIRONMENT})",
   "audiences": ["api://AzureADTokenExchange"]
 }
 JSON
 )" -o none
+}
+
+add_federated_credential "gha-${ENVIRONMENT}" "${SUB_PREFIX}:environment:${ENVIRONMENT}"
+
+# リポジトリを作り直したときなどに備え、従来形式も登録しておきます。
+# 資格情報は 1 つのアプリに複数ぶら下げられます。
+if [[ "$SUB_PREFIX" != "repo:${GH_REPO}" ]]; then
+  add_federated_credential "gha-${ENVIRONMENT}-legacy" \
+    "repo:${GH_REPO}:environment:${ENVIRONMENT}"
+fi
 
 echo "==> 5/6 この Web App だけに権限を与えます（最小権限）"
 # サブスクリプション全体ではなく、この 1 つのリソースにだけ割り当てるのが重要です

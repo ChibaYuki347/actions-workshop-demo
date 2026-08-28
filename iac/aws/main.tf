@@ -47,6 +47,18 @@ variable "github_environment" {
   description = "許可する GitHub Environment 名"
 }
 
+variable "subject_prefix" {
+  type        = string
+  default     = ""
+  description = <<-EOT
+    sub クレームの前半部分。空にすると repo:owner/repo の形式で組み立てます。
+    2026-07-15 以降に作られたリポジトリは ID 入りの形式になるため、
+    次のコマンドで実際の値を確認して指定してください。
+      gh api repos/OWNER/REPO/actions/oidc/customization/sub --jq .sub_claim_prefix
+    例) repo:my-org@123456/my-app@7890123
+  EOT
+}
+
 variable "bucket_name" {
   type        = string
   description = "作成する S3 バケット名（世界で一意）"
@@ -60,7 +72,8 @@ variable "create_oidc_provider" {
 
 locals {
   # ★ここが最も重要★ どのリポジトリの、どの環境からかまで完全一致で縛る
-  subject = "repo:${var.github_owner}/${var.github_repo}:environment:${var.github_environment}"
+  subject_prefix = var.subject_prefix != "" ? var.subject_prefix : "repo:${var.github_owner}/${var.github_repo}"
+  subject        = "${local.subject_prefix}:environment:${var.github_environment}"
 
   oidc_provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
 
@@ -75,9 +88,9 @@ data "aws_caller_identity" "current" {}
 resource "aws_iam_openid_connect_provider" "github" {
   count = var.create_oidc_provider ? 1 : 0
 
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
-  tags            = local.tags
+  url            = "https://token.actions.githubusercontent.com"
+  client_id_list = ["sts.amazonaws.com"]
+  tags           = local.tags
 }
 
 # ── 2. 成果物を置く場所
@@ -128,6 +141,13 @@ data "aws_iam_policy_document" "assume_role" {
     }
 
     # ワイルドカード（StringLike）ではなく完全一致で縛るのが安全です
+    #
+    # 新旧どちらの形式でも通したい場合は、values に 2 つ並べてください（OR 条件）。
+    # ただし移行が終わったら、使っている方だけに絞ることをおすすめします。
+    #   values = [
+    #     "repo:my-org@123456/my-app@7890123:environment:production",
+    #     "repo:my-org/my-app:environment:production",
+    #   ]
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"

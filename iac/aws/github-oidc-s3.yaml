@@ -19,6 +19,16 @@ Parameters:
       許可する GitHub Environment 名。
       ここで縛ると、その環境を経由した実行からしか AWS に入れません。
 
+  SubjectPrefix:
+    Type: String
+    Default: ""
+    Description: >
+      sub クレームの前半部分。空にすると repo:Owner/Repo の形式で組み立てます。
+      2026-07-15 以降に作られたリポジトリは ID 入りの形式になるため、
+      次のコマンドで実際の値を確認して貼り付けてください。
+        gh api repos/OWNER/REPO/actions/oidc/customization/sub --jq .sub_claim_prefix
+      例) repo:my-org@123456/my-app@7890123
+
   BucketName:
     Type: String
     Description: 作成する S3 バケット名（世界で一意である必要があります）
@@ -34,6 +44,7 @@ Parameters:
 
 Conditions:
   ShouldCreateOidcProvider: !Equals [!Ref CreateOidcProvider, "true"]
+  HasSubjectPrefix: !Not [!Equals [!Ref SubjectPrefix, ""]]
 
 Resources:
   # ── 1. GitHub を信頼先として登録する（アカウントに 1 つだけ）
@@ -92,7 +103,10 @@ Resources:
                 # ★ここが最も重要★
                 #   どのリポジトリの、どの環境からの実行かまで完全一致で縛る。
                 #   ワイルドカードにすると他リポジトリからも引けてしまいます。
-                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepo}:environment:${GitHubEnvironment}"
+                token.actions.githubusercontent.com:sub: !If
+                  - HasSubjectPrefix
+                  - !Sub "${SubjectPrefix}:environment:${GitHubEnvironment}"
+                  - !Sub "repo:${GitHubOwner}/${GitHubRepo}:environment:${GitHubEnvironment}"
       Policies:
         - PolicyName: deploy-to-site-bucket
           PolicyDocument:
@@ -125,4 +139,7 @@ Outputs:
 
   SubjectCondition:
     Description: 信頼ポリシーで許可している条件（この値と完全一致した実行だけが通ります）
-    Value: !Sub "repo:${GitHubOwner}/${GitHubRepo}:environment:${GitHubEnvironment}"
+    Value: !If
+      - HasSubjectPrefix
+      - !Sub "${SubjectPrefix}:environment:${GitHubEnvironment}"
+      - !Sub "repo:${GitHubOwner}/${GitHubRepo}:environment:${GitHubEnvironment}"

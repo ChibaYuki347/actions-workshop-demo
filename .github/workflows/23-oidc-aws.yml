@@ -28,13 +28,21 @@
 #
 #   "Condition": {
 #     "StringEquals": {
-#       "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
-#     },
-#     "StringLike": {
+#       "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
 #       "token.actions.githubusercontent.com:sub":
 #         "repo:<OWNER>/<REPO>:environment:production"
 #     }
 #   }
+#
+#   ⚠️ 2026 年 7 月 15 日以降に作られたリポジトリでは、sub に
+#      「変更されない ID」が埋め込まれた形式になりました。
+#
+#        repo:<OWNER>@<OWNER_ID>/<REPO>@<REPO_ID>:environment:production
+#
+#      リポジトリ名を推測で書くと通りません。
+#      下の「中身を見る」デモで実際の値を確認してから貼ってください。
+#      （次のコマンドでも確認できます）
+#        gh api repos/OWNER/REPO/actions/oidc/customization/sub --jq .sub_claim_prefix
 #
 #   ❌ "sub": "repo:<OWNER>/*"          ← 組織の全リポジトリから引ける。危険
 #   ⚠️ "sub": "repo:<OWNER>/<REPO>:*"   ← そのリポジトリの全ブランチから引ける
@@ -79,8 +87,21 @@ jobs:
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" \
             | jq -r '.value' | cut -d. -f2 | base64 -d 2>/dev/null || true)
           echo "$payload" | jq '{iss, aud, sub, repository, ref, environment, job_workflow_ref}'
+
+          sub=$(echo "$payload" | jq -r '.sub')
           echo ""
-          echo "この sub の値を、AWS の信頼ポリシーの Condition に設定する"
+          echo "────────────────────────────────────────────"
+          echo "クラウド側の信頼ポリシーに書くのは、この値です:"
+          echo ""
+          echo "  ${sub}"
+          echo ""
+          if [[ "$sub" == *"@"* ]]; then
+            echo "※ 名前のうしろに @数字 が付いています。"
+            echo "  これは「変更されない ID」です。リポジトリ名を"
+            echo "  変えても、この値は変わりません。"
+            echo "  クラウド側にはこの形のまま登録してください。"
+          fi
+          echo "────────────────────────────────────────────"
 
       - name: なぜ OIDC が良いのか
         run: |

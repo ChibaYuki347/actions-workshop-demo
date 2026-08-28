@@ -24,7 +24,7 @@ GitHub がその場で発行した身元証明書の中身がログに出ます�
 {
   "iss": "https://token.actions.githubusercontent.com",
   "aud": "sts.amazonaws.com",
-  "sub": "repo:my-org/my-app:environment:production",
+  "sub": "repo:my-org@123456/my-app@7890123:environment:production",
   "repository": "my-org/my-app",
   "ref": "refs/heads/main",
   "environment": "production"
@@ -33,6 +33,22 @@ GitHub がその場で発行した身元証明書の中身がログに出ます�
 
 この `sub` の文字列を、クラウド側に「これだけを信じます」と登録する。
 **それだけ**です。鍵の受け渡しは一切ありません。
+
+> ⚠️ **`@` のうしろの数字について**
+>
+> 2026 年 7 月 15 日以降に作られたリポジトリでは、`sub` に GitHub が割り当てた
+> **変更されない ID** が入ります。リポジトリ名を変えてもこの値は変わりません。
+>
+> それ以前から存在するリポジトリは、従来どおり `repo:my-org/my-app:...` の形です。
+> **社内で 2 種類が混ざる**ので、リポジトリごとに確認してください。
+>
+> ```bash
+> gh api repos/OWNER/REPO/actions/oidc/customization/sub --jq .sub_claim_prefix
+> ```
+>
+> `23-oidc-aws.yml` を実行すると、ログの最後に
+> 「クラウド側に書くのはこの値です」と表示されます。**それをコピーしてください。**
+> 手で組み立てると必ず失敗します。
 
 ### ② Azure でのデプロイを見る
 
@@ -66,7 +82,7 @@ GitHub がその場で発行した身元証明書の中身がログに出ます�
 縛るための文字列すら同じ形式です。
 
 ```
-repo:<owner>/<repo>:environment:production
+repo:<owner>@<id>/<repo>@<id>:environment:production
 ```
 
 つまり **今日 Azure で見ていただく内容は、そのまま AWS に読み替えられます。**
