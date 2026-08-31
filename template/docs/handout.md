@@ -213,7 +213,7 @@ jobs:            # 深さ 0
 GitHub-hosted なら `ubuntu-latest` のような**名前**を、
 Self-hosted なら**ラベルの組み合わせ**（例：`[ self-hosted, Windows ]`）を書きます。
 
-> **本日の環境では** `runs-on:` に `ubuntu-latest` を指定します（手順書の値が正です）。
+> **本日の環境では** `runs-on:` に `[self-hosted, Windows, X64]` を指定します（手順書の値が正です）。
 > この本では説明の都合上ずっと `ubuntu-latest` と書いていますが、
 > **実際に打ち込むときは手順書の値に読み替えてください。**
 

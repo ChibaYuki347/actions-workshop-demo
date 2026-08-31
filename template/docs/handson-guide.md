@@ -44,7 +44,7 @@
 
 | | 値 |
 |---|---|
-| **本日使う値** | `ubuntu-latest` |
+| **本日使う値** | `[self-hosted, Windows, X64]` |
 
 > ⚠️ **貼り付けたコードの `runs-on:` の行は、書き換えずにそのまま使ってください。**
 > この手順書に載っているコードは、すべて本日の環境に合わせた状態になっています。
@@ -216,7 +216,7 @@ on:
 
 jobs:
   hello:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     steps:
       - uses: actions/checkout@v5
       - run: echo "はじめての GitHub Actions"
@@ -354,7 +354,7 @@ on:
 
 jobs:
   hello:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     steps:
       - run: cat README.md
       - run: echo "done"
@@ -454,7 +454,7 @@ on:
 
 jobs:
   hello:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     steps:
       - uses: actions/checkout@v5
       - run: cat README.md
@@ -526,7 +526,7 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     steps:
       - uses: actions/checkout@v5
       - run: echo "はじめての GitHub Actions"
@@ -650,7 +650,7 @@ on:
 
 jobs:
   hello:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     steps:
       - uses: actions/checkout@v5
       - run: cat README.md
@@ -685,14 +685,14 @@ jobs:
 # ❌ steps が jobs と同じ深さ → build ジョブの中身として認識されない
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
 steps:
   - run: echo hi
 
 # ✅ steps は build の中なので、build より深く
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     steps:
       - run: echo hi
 ```

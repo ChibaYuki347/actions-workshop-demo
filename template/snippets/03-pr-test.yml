@@ -17,7 +17,7 @@ on:
 jobs:
   test:
     # ▼▼▼ 当日、この 1 行だけ書き換えます ▼▼▼
-    runs-on: ubuntu-latest   # RUNS_ON_MARKER
+    runs-on: [self-hosted, Windows, X64]   # RUNS_ON_MARKER
     # ▲▲▲ ここまで ▲▲▲
     steps:
       - uses: actions/checkout@v5
