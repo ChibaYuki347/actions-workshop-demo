@@ -359,7 +359,9 @@ jobs:
     runs-on: [self-hosted, Windows, X64]
     steps:
       - name: 作業フォルダを空にする
-        run: Get-ChildItem -Force . | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        run: |
+          Get-ChildItem -Force |
+            Remove-Item -Recurse -Force -ErrorAction Ignore
 
       - run: cat README.md
       - run: echo "done"
@@ -480,7 +482,9 @@ jobs:
     runs-on: [self-hosted, Windows, X64]
     steps:
       - name: 作業フォルダを空にする
-        run: Get-ChildItem -Force . | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        run: |
+          Get-ChildItem -Force |
+            Remove-Item -Recurse -Force -ErrorAction Ignore
 
       - uses: actions/checkout@v5
 

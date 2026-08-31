@@ -1987,7 +1987,9 @@ GitHub-hosted は毎回まっさらな VM ですが、**self-hosted は同じフ
 
 ```yaml
 - name: 作業フォルダを空にする
-  run: Get-ChildItem -Force . | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+  run: |
+    Get-ChildItem -Force |
+      Remove-Item -Recurse -Force -ErrorAction Ignore
 
 - uses: actions/checkout@v5
 ```
