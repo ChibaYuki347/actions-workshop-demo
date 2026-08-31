@@ -12,7 +12,7 @@ on:
 jobs:
   hello:
     # ▼▼▼ 当日、この 1 行だけ書き換えます ▼▼▼
-    runs-on: [self-hosted, Windows, X64]   # RUNS_ON_MARKER
+    runs-on: [self-hosted, Windows]   # RUNS_ON_MARKER
     # ▲▲▲ ここまで ▲▲▲
     steps:
       # 自社のランナーは作業フォルダを使い回します。
