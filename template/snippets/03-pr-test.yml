@@ -16,10 +16,15 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # ▼▼▼ 当日、この 1 行だけ書き換えます ▼▼▼
+    runs-on: ubuntu-latest   # RUNS_ON_MARKER
+    # ▲▲▲ ここまで ▲▲▲
     steps:
       - uses: actions/checkout@v5
       - run: echo "はじめての GitHub Actions"
-      - run: ls -la
+      - run: ls
       - name: テストの代わり
-        run: test -f README.md && echo "OK"
+        # 本物のプロジェクトなら、ここが npm test や pytest になります。
+        # 今日は「README.md が読めるか」をテストの代わりにしています。
+        # ファイルが無ければ、このステップは失敗します。
+        run: cat README.md

@@ -206,11 +206,18 @@ jobs:            # 深さ 0
 
 | 種類 | 誰が用意するか | 特徴 |
 |---|---|---|
-| **GitHub-hosted** | GitHub | 毎回まっさらな仮想マシンが立つ。何も残らない。まずはこれ |
+| **GitHub-hosted** | GitHub | 毎回まっさらな仮想マシンが立つ。何も残らない |
 | **Self-hosted** | 自社 | 社内ネットワークに繋げる。ただし後片付けと隔離は自分の責任 |
 
-**`runs-on: ubuntu-latest`** と書くと、GitHub が Ubuntu の仮想マシンを 1 台貸してくれます。
-このマシンには、**最初リポジトリのコードは入っていません。**
+**`runs-on:`** に何を書くかで、実行される場所が決まります。
+GitHub-hosted なら `ubuntu-latest` のような**名前**を、
+Self-hosted なら**ラベルの組み合わせ**（例：`[ self-hosted, Windows ]`）を書きます。
+
+> **本日の環境では** `runs-on:` に `ubuntu-latest` を指定します（手順書の値が正です）。
+> この本では説明の都合上ずっと `ubuntu-latest` と書いていますが、
+> **実際に打ち込むときは手順書の値に読み替えてください。**
+
+どちらの場合も、そのマシンには **最初リポジトリのコードは入っていません。**
 
 だから `actions/checkout` が要ります（← Day 1 のハンズオン②で体験した内容）。
 
@@ -340,8 +347,8 @@ Actions タブ
 # ① いま何が置かれているかを見る
 - run: |
     pwd
-    ls -la
-    env | sort
+    ls
+    env | sort        # Windows ランナーでは Get-ChildItem Env: を使う
 
 # ② 途中の変数の中身を見る
 - run: echo "ref=${{ github.ref }} sha=${{ github.sha }}"
@@ -455,7 +462,7 @@ jobs:
         with:
           name: dist
           path: dist/
-      - run: ls -la dist/
+      - run: ls dist/
 ```
 
 **アーティファクトの用途は 2 つ**です。
@@ -1864,6 +1871,59 @@ PR で連続 push したとき、古いコミットに対する CI は**結果�
 - 環境が使い回されるため、**前ジョブの残骸や認証情報が残りうる**
 - 環境管理とセキュリティの責任が自組織に発生する
 - **⚠ パブリックリポジトリで self-hosted runner を使わないでください。** フォークからの PR で任意コードが自社ネットワーク内で実行される危険があります。
+
+#### Windows の self-hosted runner で最初にハマるところ
+
+**既定のシェルが違います。** GitHub-hosted の Ubuntu では `bash`、Windows では `pwsh` です。
+
+| よく書くコマンド | Linux (bash) | Windows (pwsh) |
+|---|---|---|
+| `echo "文字列"` | ✅ | ✅ |
+| `cat FILE` | ✅ | ✅（`Get-Content` の別名） |
+| `ls` | ✅ | ✅（`Get-ChildItem` の別名） |
+| `ls -la` | ✅ | ❌ そんなオプションは無い |
+| `test -f FILE` | ✅ | ❌ そんなコマンドは無い |
+| `echo "$MY_VAR"` | ✅ | ⚠️ **エラーにならず空で出る**（`$env:MY_VAR` が正しい） |
+
+最後の行が最も危険です。**失敗せずに間違った結果が出る**ため、気づけません。
+
+**対策は 2 つ**です。
+
+```yaml
+# ① シェルを明示する
+- run: ls -la
+  shell: bash
+```
+
+> ⚠️ ただし `shell: bash` は **Windows なら必ず使えるとは限りません。**
+> Git for Windows を既定オプションでインストールすると、PATH に入るのは
+> `C:\Program Files\Git\cmd` だけで、`bash.exe` のある `Git\bin` は入りません。
+> GitHub-hosted の Windows ランナーは明示的に PATH を通しているので動きますが、
+> **自前で構築した runner では `bash: command not found` になることがあります。**
+
+```yaml
+# ② 環境変数はシェルに渡さず、GitHub の式で埋める（推奨）
+- run: echo "os = ${{ runner.os }}"
+```
+
+②の書き方なら、`${{ }}` はシェルに渡る**前に**展開されるため、
+**どのシェルでも同じ結果**になります。移植性を最優先するならこちらです。
+
+**`$GITHUB_OUTPUT` / `$GITHUB_ENV` も同じ罠です。**
+この本の後半に出てくる次の書き方は、**bash 専用**です。
+
+```yaml
+# ❌ Windows (pwsh) では $GITHUB_OUTPUT が空になり書き込みに失敗する
+- run: echo "version=1.2.3" >> "$GITHUB_OUTPUT"
+```
+
+```yaml
+# ✅ pwsh ならこう書く
+- run: "version=1.2.3" >> $env:GITHUB_OUTPUT
+```
+
+シェルをまたいで同じ YAML を使いたい場合は、`shell:` を明示するか、
+OS ごとにステップを分けて `if: runner.os == 'Windows'` で切り替えてください。
 
 Kubernetes 上でランナーを自動スケールさせる構成もあります。運用コストとのトレードオフで判断してください。
 

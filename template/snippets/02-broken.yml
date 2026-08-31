@@ -11,7 +11,9 @@ on:
 
 jobs:
   hello:
-    runs-on: ubuntu-latest
+    # ▼▼▼ 当日、この 1 行だけ書き換えます ▼▼▼
+    runs-on: ubuntu-latest   # RUNS_ON_MARKER
+    # ▲▲▲ ここまで ▲▲▲
     steps:
       - run: cat README.md
       - run: echo "done"

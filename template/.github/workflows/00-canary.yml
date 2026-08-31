@@ -1,19 +1,44 @@
 name: 00 環境確認
 
-# このワークフローは、手動で実行したときだけ動きます。
-# 演習の邪魔をしないよう、push では動かないようにしてあります。
+# 演習を始める前に、これを 1 回だけ手動で実行します。
+# 「実行環境がちゃんと使えるか」を確かめるためのワークフローです。
+# push では動かないので、演習の邪魔にはなりません。
 on:
   workflow_dispatch:
 
 jobs:
   canary:
-    runs-on: ubuntu-latest
+    # ▼▼▼ 当日、この 1 行だけ書き換えます ▼▼▼
+    runs-on: ubuntu-latest   # RUNS_ON_MARKER
+    # ▲▲▲ ここまで ▲▲▲
+
     steps:
-      - name: リポジトリを取得できるか
+      - name: 1. リポジトリを取得できるか
         uses: actions/checkout@v5
 
-      - name: 実行環境が使えるか
+      - name: 2. 実行環境の素性
         run: |
-          echo "OK: GitHub-hosted runner is working"
-          echo "runner os = $RUNNER_OS"
-          cat README.md
+          echo "OS        = ${{ runner.os }}"
+          echo "アーキテクチャ = ${{ runner.arch }}"
+          echo "ランナー名   = ${{ runner.name }}"
+          echo "作業フォルダ  = ${{ github.workspace }}"
+
+      - name: 3. ファイルが読めるか
+        run: cat README.md
+
+      - name: 4. ファイル一覧が見られるか
+        run: ls
+
+      - name: 5. bash が使えるか
+        # 使えなくても演習は問題なくできます。結果を知りたいだけなので、
+        # 失敗しても後続のステップを止めない設定にしています。
+        continue-on-error: true
+        shell: bash
+        run: echo "bash は使えます"
+
+      - name: 6. 前回の実行の残りがないか
+        # セルフホステッドランナーでは、作業フォルダが次回も使い回されることがあります。
+        # 2 回目以降の実行で leftover.txt が見えたら、使い回されている証拠です。
+        run: |
+          ls
+          echo "run-${{ github.run_number }}" > leftover.txt
