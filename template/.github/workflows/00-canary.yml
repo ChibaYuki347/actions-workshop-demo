@@ -13,33 +13,44 @@ jobs:
     # ▲▲▲ ここまで ▲▲▲
 
     steps:
-      - name: 1. リポジトリを取得できるか
+      - name: 1. 作業フォルダの状態（checkout する前）
+        # セルフホステッドランナーは作業フォルダを使い回します。
+        # ここに前回のファイルが残っている場合、演習が意図どおりに動かないことがあります。
+        # 何も表示されなければ、まっさらな状態です。
+        run: |
+          echo "workspace = ${{ github.workspace }}"
+          ls
+
+      - name: 2. リポジトリを取得できるか
         uses: actions/checkout@v5
 
-      - name: 2. 実行環境の素性
+      - name: 3. 実行環境の素性
         run: |
-          echo "OS        = ${{ runner.os }}"
-          echo "アーキテクチャ = ${{ runner.arch }}"
-          echo "ランナー名   = ${{ runner.name }}"
-          echo "作業フォルダ  = ${{ github.workspace }}"
+          echo "os     = ${{ runner.os }}"
+          echo "arch   = ${{ runner.arch }}"
+          echo "runner = ${{ runner.name }}"
 
-      - name: 3. ファイルが読めるか
+      - name: 4. ファイルが読めるか
         run: cat README.md
 
-      - name: 4. ファイル一覧が見られるか
+      - name: 5. ファイル一覧が見られるか
         run: ls
 
-      - name: 5. bash が使えるか
-        # 使えなくても演習は問題なくできます。結果を知りたいだけなので、
+      - name: 6. 既定のシェルは何か
+        # 演習に必須ではありません。結果を知りたいだけなので、
         # 失敗しても後続のステップを止めない設定にしています。
         continue-on-error: true
-        shell: bash
-        run: echo "bash は使えます"
+        run: $PSVersionTable.PSVersion.ToString()
 
-      - name: 6. 作業フォルダが使い回されていないか
-        # セルフホステッドランナーでは、作業フォルダが次回の実行でも使い回されます。
-        # actions/checkout は既定で中身を掃除するため、通常このファイルは残りません。
-        # 2 回目以降の実行で leftover.txt が一覧に出たら、掃除が効いていない合図です。
-        run: |
-          ls
-          echo "run-${{ github.run_number }}" > leftover.txt
+      - name: 7. bash が使えるか
+        # 使えなくても演習は問題なくできます。
+        continue-on-error: true
+        shell: bash
+        run: echo "bash is available"
+
+      - name: 8. ログの日本語表示（参考）
+        # 下の行が文字化けする環境では、run: の中に日本語を書かないでください。
+        # 日本語はステップ名（name:）に書けば、正しく表示されます。
+        # 演習用のコードは日本語を出力しないので、影響はありません。
+        continue-on-error: true
+        run: echo "Japanese test / 日本語テスト"

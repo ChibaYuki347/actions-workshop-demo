@@ -219,7 +219,8 @@ jobs:
     runs-on: [self-hosted, Windows, X64]
     steps:
       - uses: actions/checkout@v5
-      - run: echo "はじめての GitHub Actions"
+      - name: あいさつを表示する
+        run: echo "Hello GitHub Actions"
       - run: ls
 ```
 
@@ -297,7 +298,7 @@ jobs:
 
 - [ ] **実行された** — Actions タブに `CI` があり、緑のチェックになっている
 - [ ] **ログが読める** — `hello` ジョブを開き、各ステップのログが展開できる
-- [ ] **内容が正しい** — `echo` のステップに「はじめての GitHub Actions」が出ている
+- [ ] **内容が正しい** — 「あいさつを表示する」のステップに `Hello GitHub Actions` が出ている
 - [ ] （おまけ）`ls` のステップに `README.md` が含まれている
 
 ---
@@ -340,11 +341,12 @@ CI を導入すると、**失敗は毎日起きます。**
 
 **2.** 右上の **鉛筆マーク（✏️ Edit this file）** をクリックします。
 
-**3.** **`- uses: actions/checkout@v5` の行を削除します。**
-　　あわせて `- run: ls` の行も、`- run: cat README.md` に書き換えてください。
+**3.** 中身を、以下の内容に**まるごと貼り替えます。**
+　　（`snippets/02-broken.yml` に同じものが入っています）
 
-　　結果、以下の内容になります。**まるごと貼り替えても構いません。**
-　　（`snippets/02-broken.yml` に同じ内容が入っています）
+　　第 1 章のコードとの違いは 2 つです。
+　　- `- uses: actions/checkout@v5` の行が **無くなっている**
+　　- `- run: ls` が `- run: cat README.md` に**変わっている**
 
 ```yaml
 name: CI
@@ -356,9 +358,20 @@ jobs:
   hello:
     runs-on: [self-hosted, Windows, X64]
     steps:
+      - name: 作業フォルダを空にする
+        run: Get-ChildItem -Force . | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
       - run: cat README.md
       - run: echo "done"
 ```
+
+> 💡 **いちばん上のステップは何をしているの？**
+>
+> 皆さまが使うランナーは**自社のマシン**なので、前回の実行で使ったフォルダを
+> **そのまま使い回します。** 何もしないと「前回の残りファイル」が見えてしまい、
+> この演習が成立しません。
+> そこで、最初に作業フォルダを空にしています。
+> **演習を確実に再現するための準備**だと思ってください。理由は手順 2-4 で説明します。
 
 **4.** `Commit changes...` → **`Commit directly to the main branch`** を選んでコミットします。
 
@@ -375,9 +388,13 @@ jobs:
 **4.** ログに、次のようなメッセージが出ているはずです。
 
 ```
-cat: README.md: No such file or directory
+cat : Cannot find path 'C:\actions-runner\_work\...\README.md' because it does not exist.
+    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetContentCommand
 Error: Process completed with exit code 1.
 ```
+
+> 文言は環境によって多少変わりますが、
+> **`Cannot find path`（そんな場所にファイルは無い）** と出ていれば同じことです。
 
 ---
 
@@ -435,16 +452,22 @@ GitHub 公式の部品（Action）です。
 > | 入っているもの | よく使うツールが一式入っている | 自社で入れたものだけ |
 >
 > どちらの場合も **`actions/checkout` は必要**です。
-> ただしセルフホステッドでは、**前回の実行で作られたファイルが残っている**ことがあります。
-> 「前回は動いたのに今日は失敗する」「隣の人は成功するのに自分は失敗する」といった
-> 現象の原因になりやすいので、頭の片隅に置いておいてください。
+> ただしセルフホステッドでは、**前回の実行で持ってきたファイルが残っている**ことがあります。
 >
-> `00-canary.yml` を **2 回** 実行すると、この違いを自分の目で確かめられます。
-> 2 回目に `leftover.txt` が見えたら、環境が使い回されている証拠です。
+> だからこの演習では、いちばん上に**作業フォルダを空にする**ステップを入れていました。
+> あれが無いと、前回の実行で取得した `README.md` がそのまま残っていて、
+> **`actions/checkout` を書き忘れているのに成功してしまう**からです。
+>
+> これは実務でも起こります。
+> 「checkout を書いていないのに、なぜか動いているワークフロー」は、
+> セルフホステッド環境でよくある落とし穴です。
+> そして**別のマシンで動かした瞬間に壊れます。**
+> 「前回は動いたのに今日は失敗する」「隣の人は成功するのに自分は失敗する」の正体は、たいていこれです。
 
 #### 直したコード
 
 `ci.yml` を編集して、`- run: cat README.md` の**上に** checkout の行を足します。
+**足すのは 1 行だけ**です。
 
 ```yaml
 name: CI
@@ -456,7 +479,11 @@ jobs:
   hello:
     runs-on: [self-hosted, Windows, X64]
     steps:
+      - name: 作業フォルダを空にする
+        run: Get-ChildItem -Force . | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
       - uses: actions/checkout@v5
+
       - run: cat README.md
       - run: echo "done"
 ```
@@ -468,7 +495,7 @@ jobs:
 ### ✅ ハンズオン② 完了チェック
 
 - [ ] わざと失敗させて、❌ を出せた
-- [ ] 失敗したステップのログを開き、`No such file or directory` を自分の目で読んだ
+- [ ] 失敗したステップのログを開き、`Cannot find path` を自分の目で読んだ
 - [ ] `actions/checkout` を足して、✅ に戻せた
 
 ---
@@ -529,7 +556,8 @@ jobs:
     runs-on: [self-hosted, Windows, X64]
     steps:
       - uses: actions/checkout@v5
-      - run: echo "はじめての GitHub Actions"
+      - name: あいさつを表示する
+        run: echo "Hello GitHub Actions"
       - run: ls
       - name: テストの代わり
         run: cat README.md

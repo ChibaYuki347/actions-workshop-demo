@@ -13,5 +13,6 @@ jobs:
     # ▲▲▲ ここまで ▲▲▲
     steps:
       - uses: actions/checkout@v5
-      - run: echo "はじめての GitHub Actions"
+      - name: あいさつを表示する
+        run: echo "Hello GitHub Actions"
       - run: ls
