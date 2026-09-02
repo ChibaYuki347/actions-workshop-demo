@@ -5,7 +5,7 @@ on:
 
 jobs:
   hello:
-    runs-on: [self-hosted, Windows]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - name: あいさつを表示する
