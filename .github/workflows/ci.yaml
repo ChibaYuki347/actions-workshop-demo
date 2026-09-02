@@ -1,3 +1,9 @@
+# ハンズオン② で使うコード（わざと壊した状態）
+# 手順書 第 2 章「手順 2-1」で、この中身に置き換えます。
+#
+# ⚠️ これは「わざと失敗させる」ためのコードです。正しくありません。
+#    どこが悪いのかを、実行ログから自分で見つけるのが第 2 章のねらいです。
+
 name: CI
 
 on:
@@ -5,9 +11,17 @@ on:
 
 jobs:
   hello:
+    # ▼▼▼ 当日、この 1 行だけ書き換えます ▼▼▼
     runs-on: ubuntu-latest
+    # ▲▲▲ ここまで ▲▲▲
     steps:
-      - uses: actions/checkout@v5
-      - name: あいさつを表示する
-        run: echo "Hello GitHub Actions"
-      - run: ls
+      # 自社のランナーは作業フォルダを使い回します。
+      # 前回の実行で残ったファイルがあると、この演習が成立しないため、
+      # 最初に作業フォルダを空にしています。
+      - name: 作業フォルダを空にする
+        run: |
+          Get-ChildItem -Force |
+            Remove-Item -Recurse -Force -ErrorAction Ignore
+
+      - run: cat README.md
+      - run: echo "done"
