@@ -27,8 +27,10 @@ permissions:
   id-token: write # これが無いと OIDC トークンを要求できない
 
 concurrency:
-  # 同じ本番に同時に 2 つデプロイしないようにする
-  group: deploy-production
+  # 同じ本番に同時に 2 つデプロイしないようにする。
+  # デプロイ先ごとにグループを分ける（AWS 版は deploy-production-aws）。
+  # 承認待ちで止めている別のワークフローに引きずられないようにするため。
+  group: deploy-production-azure
   cancel-in-progress: false
 
 jobs:
